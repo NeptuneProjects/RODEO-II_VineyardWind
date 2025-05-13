@@ -1,0 +1,14 @@
+[config]
+jasa_style = "config/jasa_fig_style.mplstyle"
+
+[data]
+bathy = "data/bathy"
+bathy_bounds = "data/bathy/bounds.toml"
+das = "data/das"
+das_location = "data/das/DAS_final.h5"
+equipment = "data/metadata/equipment.csv"
+turbines = "data/metadata/turbines.csv"
+
+[reports]
+figures  = "reports/figures"
+results = "reports"

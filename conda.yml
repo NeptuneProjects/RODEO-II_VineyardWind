@@ -1,0 +1,28 @@
+name: vw_das
+channels:
+  - conda-forge
+  - pyrocko
+  - defaults
+dependencies:
+  - python=3.12
+  - basemap
+  - h5py
+  - ipympl
+  - jupyterlab
+  - matplotlib
+  - netcdf4
+  - numpy
+  - pandas
+  - pip
+  - pyproj
+  - pyrocko
+  - scipy
+  - tqdm
+  - pip:
+    - bathyreq
+    - cmasher
+    - cmocean
+    - lightguide
+    - python-dotenv
+    - git+ssh://git@github.com/TritonOA/TritonOA.git
+    - -e .
