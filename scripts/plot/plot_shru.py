@@ -29,8 +29,10 @@ def main(args: argparse.Namespace) -> None:
     ds = readers.read_shru_data(args.inv, args.start, args.end)
     ds = condition_data(ds)
 
-    fig = plot_spectrogram(ds, channel=3, xlabel=f"Time (s) after {args.start}")
-    fig.savefig(paths.reports.figures / "finwhale_spec.png", **savefig_kwargs)
+    for channel in range(0, 4):
+        fig = plot_spectrogram(ds, channel=channel, xlabel=f"Time (s) after {args.start}")
+        fig.suptitle(f"Channel {channel} SHRU data")
+        fig.savefig(paths.reports.figures / f"finwhale_spec_{str(args.inv.name)}_ch{channel}.png", **savefig_kwargs)
 
 
 if __name__ == "__main__":
@@ -51,7 +53,7 @@ if __name__ == "__main__":
         "--inv",
         type=Path,
         help="Path to the configuration file",
-        default=Path(os.getenv("VLA2_INV")),
+        default=Path(os.getenv("VLA1_INV")),
     )
     args = parser.parse_args()
     main(args)
