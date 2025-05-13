@@ -193,7 +193,7 @@ def read_tdms(
         patch = spool.select(time=time).chunk(time=None)[0]
 
 
-    logging.info(f"Patch shape: {patch.shape}")
+    logging.info(f"Original patch shape: {patch.shape}")
 
     # 6. Add the channel coordinates to the patch
     patch = add_channel_numbers(patch)
