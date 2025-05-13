@@ -7,6 +7,7 @@ from pathlib import Path
 
 import dotenv
 import matplotlib.pyplot as plt
+import numpy as np
 from tritonoa.data.stream import DataStream
 
 import vwdas.paths as paths
@@ -31,9 +32,11 @@ def main(args: argparse.Namespace) -> None:
     ds = readers.read_shru_data(args.inv, args.start, args.end)
     ds = condition_data(ds, args.target_sampling_rate)
     
-    ds.write(args.out)
 
-    fig, ax = plt.figure()
+    
+    np.save(args.out, ds.data[args.channel])
+
+    fig, ax = plt.subplots()
     ax.plot(ds.time_vector, ds.data[args.channel])
     ax.set_title("Pile Driving Template")
     ax.set_xlabel("Time (s)")
@@ -54,7 +57,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("data/acoustic/pile_driving_pattern"),
+        default=Path("data/acoustic/pile_driving_pattern.npy"),
         help="Path to the output file.",
     )
     parser.add_argument(
