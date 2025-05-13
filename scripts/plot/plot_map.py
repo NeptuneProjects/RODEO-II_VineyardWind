@@ -49,6 +49,12 @@ def main(args: argparse.Namespace) -> None:
         "inset": readers.read_bbox(paths.data.bathy_bounds, "inset"),
     }
 
+    active_turbine = {
+        "label": "AN36",
+        "longitude": -70.50724613582075,
+        "latitude": 41.103092699720655,
+    }
+    
     for map_type, ax in zip(maps, axs):
         ax = plotting.plot_study_area(
             bathy,
@@ -57,6 +63,7 @@ def main(args: argparse.Namespace) -> None:
             das_locations,
             equip_locations,
             turbine_locations,
+            active_turbine=active_turbine,
             bounds=bboxes[map_type],
             ax=ax,
             inset=bboxes["inset"] if map_type == "bounds" else None,

@@ -169,6 +169,7 @@ def plot_study_area(
     das_df: pd.DataFrame,
     equipment_df: pd.DataFrame,
     turbines_df: pd.DataFrame,
+    active_turbine: dict | None = None,
     bounds: list[list[float]] | None = None,
     ax: plt.Axes | None = None,
     scale_bar: float = 1.0,
@@ -236,6 +237,17 @@ def plot_study_area(
         zorder=20,
         label="Turbines",
     )
+    if active_turbine is not None:
+        ax.scatter(
+            *m(active_turbine["longitude"], active_turbine["latitude"]),
+            marker="h",
+            c="tab:orange",
+            edgecolors="k",
+            # linewidth=1,
+            # s=150,
+            zorder=30,
+            label=active_turbine["label"],
+        )
 
     ax.plot(
         *m(das_df["longitude"], das_df["latitude"]),
