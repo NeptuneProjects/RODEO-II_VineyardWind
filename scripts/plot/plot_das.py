@@ -20,11 +20,11 @@ def main():
     logging.info(f"Reading data from: {datadir}")
 
     patch, properties = read_tdms(
-        datadir, time=("2023-12-01T21:59:55", "2023-12-01T22:00:20"), channel=(3200, 3300)
+        datadir, time=("2023-12-01T21:06:30", "2023-12-01T21:07:00"), channel=(0, 4200)
     )
     print(patch.coords)
 
-    patch_filt = patch.pass_filter(time=(40, 60))
+    patch_filt = patch.pass_filter(time=(20, None))
     # patch_filt.viz.waterfall(show=True, scale=10, scale_type="absolute")
     # patch_filt = patch_filt.savgol_filter(time=1.0, polyorder=3)
 
@@ -32,7 +32,7 @@ def main():
 
     fig = plt.figure(figsize=(12, 6))
     ax = plt.gca()
-    ax = patch_filt.viz.wiggle(ax=ax, alpha=0.15, scale=0.1)
+    ax = patch_filt.viz.wiggle(ax=ax, alpha=0.1, scale=0.1)
     ax.set_xlabel("Time")
     ax.set_ylabel("Distance (m)")
 
@@ -58,43 +58,7 @@ def main():
 
     plt.show()
 
-    
 
-
-
-    # def plot_filtered_data(
-    #     # blast: Blast,
-    #     filter_type: str,
-    #     freq: float | tuple[float, float] | None = None,
-    #     afk_exponent: float | None = None,
-    #     figsize: tuple[float, float] = (18, 12),
-    #     normalize_traces: bool = True,
-    # ) -> None:
-    #     blast_filt = blast.copy()
-    #     if filter_type == "highpass":
-    #         logging.info(f"Highpass filter with cutoff frequency: {freq} Hz")
-    #         blast_filt.highpass(cutoff_freq=freq)
-    #     if filter_type == "lowpass":
-    #         logging.info(f"Lowpass filter with cutoff frequency: {freq} Hz")
-    #         blast_filt.lowpass(cutoff_freq=freq)
-    #     if filter_type == "bandpass":
-    #         logging.info(f"Bandpass filter with cutoff frequencies: {freq} Hz")
-    #         blast_filt.bandpass(min_freq=freq[0], max_freq=freq[1])
-    #     if filter_type == "afk":
-    #         logging.info(f"AFK filter with exponent: {afk_exponent}")
-    #         blast_filt.afk_filter(exponent=afk_exponent)
-
-    #     fig, ax = plt.subplots(figsize=figsize)
-    #     blast_filt.plot(axes=ax, normalize_traces=normalize_traces)
-    #     ax.set_title(f"{filter_type.capitalize()} Filtered Data")
-    #     return fig
-
-    # def plot_data(blast: Blast, figsize: tuple[float, float] = (18, 12)) -> None:
-    #     fig, ax = plt.subplots(figsize=figsize)
-    #     im = blast.plot(axes=ax)
-    #     im.set_clim(-0.5, 0.5)
-    #     ax.set_title("Raw Data")
-    #     return fig
 
     # attrs = dc.scan(datadir)
     # spool = dc.spool(datadir)
