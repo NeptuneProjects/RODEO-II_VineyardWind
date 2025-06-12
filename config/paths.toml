@@ -3,6 +3,13 @@
 # [computer.<name>] sections are paths for specific computers.
 
 [default]
+# Map bounds
+bounds_file = "./config/map_bounds.toml"
+# Bathymetry data
+bathy_data = "./data/bathy/bathy.hdf5"
+# Figures
+figures = "./reports/figures"
+# Equipment
 equipment_config = "./config/experiment/equipment.csv"
 # Acoustic Arrays
 3dvha = "./config/experiment/3dvha.csv"
