@@ -9,12 +9,16 @@ bounds_file = "./config/map_bounds.toml"
 bathy_data = "./data/bathy/bathy.hdf5"
 # Figures
 figures = "./reports/figures"
+jasa_style = "./config/jasa_fig_style.mplstyle"
 # Equipment
 equipment_config = "./config/experiment/equipment.csv"
 # Acoustic Arrays
 3dvha = "./config/experiment/3dvha.csv"
 vla1_config = "./config/experiment/vla1.csv"
 vla2_config = "./config/experiment/vla2.csv"
+# DAS Location
+das_location_raw = "./data/raw/DAS_final.h5"
+das_location = "./config/experiment/das_location.csv"
 # Turbine Locations
 raw_turbine_data = "./data/turbines.csv"
 turbine_config = "./config/experiment/turbines.csv"
@@ -43,6 +47,7 @@ amb_db = "./data/amb.hdf5"
 # Max correlation databases
 max_corr_dir = "./data/max_corr"
 
-[computer.neptune2]
+[computer.neptune]
 # SHRU Data Directory
-shru_data = "/Volumes/T7_Shield/RODEOII/data/events"
+shru_data = "/Volumes/T7_Shield/RODEOII/south_fork/data/events"
+# DAS Data
