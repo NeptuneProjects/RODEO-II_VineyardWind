@@ -2,17 +2,16 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import os
+import logging
 from pathlib import Path
 import tomllib
 
-from dotenv import load_dotenv
 import numpy as np
 from tritonoa.data.inventory import Inventory
 from tritonoa.data.signal import SignalParams
 from tritonoa.data.time import ClockParameters
 
-load_dotenv()
+from vineyard.config import get_path
 
 
 def main(args: argparse.Namespace) -> None:
@@ -20,13 +19,15 @@ def main(args: argparse.Namespace) -> None:
         config = tomllib.load(f)
 
     for key in config:
-        print(f"Building inventory for {key}...")
-        
+        logging.info(f"Building inventory for {key}...")
+
         data_cfg = config[key]["data"]
         clock_cfg = config[key].get("clock", None)
         hyd_cfg = config[key]["hydrophone"]
 
-        if clock_cfg is not None:
+        if clock_cfg is None:
+            clock_params = None
+        else:
             time_check_0 = np.datetime64(clock_cfg["time_check_0"])
             time_check_1 = np.datetime64(clock_cfg["time_check_1"])
             clock_params = ClockParameters(
@@ -35,6 +36,7 @@ def main(args: argparse.Namespace) -> None:
                 offset_0=clock_cfg["offset_0"],
                 offset_1=clock_cfg["offset_1"],
             )
+
         signal_params = SignalParams(
             gain=hyd_cfg["fixed_gain"],
             sensitivity=hyd_cfg["sensitivity"],
@@ -44,13 +46,13 @@ def main(args: argparse.Namespace) -> None:
         inv.build(
             dataset_path=data_cfg["directory"],
             glob_pattern=data_cfg["glob_pattern"],
-            # clock_params=clock_params,
+            clock_params=clock_params,
             conditioner=signal_params,
         )
         savepath = Path(data_cfg["destination"])
         inv.save(savepath)
 
-        print(f"Inventory saved to {savepath.resolve()}")
+        logging.info(f"Inventory saved to {savepath.resolve()}")
 
 
 if __name__ == "__main__":
@@ -59,7 +61,7 @@ if __name__ == "__main__":
         "--config",
         type=Path,
         help="Path to the configuration file",
-        default=Path(os.getenv("INVCONFIG")),
+        default=get_path("inventory_config"),
     )
     args = parser.parse_args()
     main(args)

@@ -2,9 +2,9 @@
 [SHRU905_VLA1]
 
 [SHRU905_VLA1.data]
-directory = "./data/acoustic"
-glob_pattern = "VLA1_SHRU905*/[!._]*.D23"
-destination = "data/acoustic/SHRU905_VLA1_FileInfo.csv"
+directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+glob_pattern = "VLA1_shru905*/[!._]*.D23"
+destination = "data/acoustic/inventory_SHRU905_VLA1.csv"
 file_format = "SHRU"                                    # Optional
 
 [SHRU905_VLA1.hydrophone] # Optional
@@ -15,9 +15,9 @@ serial_number = ["722017", "722019", "722020", "722022"]
 [SHRU920_VLA2]
 
 [SHRU920_VLA2.data]
-directory = "./data/acoustic"
-glob_pattern = "VLA2_SHRU920*/[!._]*.D23"
-destination = "data/acoustic/SHRU920_VLA2_FileInfo.csv"
+directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+glob_pattern = "VLA2_shru920*/[!._]*.D23"
+destination = "data/acoustic/inventory_SHRU920_VLA2.csv"
 
 [SHRU920_VLA2.hydrophone]
 fixed_gain = [6.0, 6.0, 6.0, 6.0]
