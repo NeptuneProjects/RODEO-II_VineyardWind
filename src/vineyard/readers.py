@@ -15,6 +15,7 @@ import h5py
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import polars as pl
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION
@@ -118,7 +119,7 @@ def read_das_array_properties(file: Path) -> DASArrayProperties:
     return DASArrayProperties.from_dict(tdms_properties)
 
 
-def read_das_locations(file: Path) -> pd.DataFrame:
+def read_das_locations(file: Path) -> pl.DataFrame:
     """Read the DAS location from a HDF5 file.
 
     Args:
@@ -133,7 +134,7 @@ def read_das_locations(file: Path) -> pd.DataFrame:
             "longitude": f.get("Lon")[:],
             "error_m": f.get("Location_err[m]")[:],
         }
-    return pd.DataFrame(das_location)
+    return pl.DataFrame(das_location)
 
 
 def read_sensor_locations(file: Path) -> pd.DataFrame:

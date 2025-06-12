@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+from pathlib import Path
 
 import cmasher as cmr
 import cmocean as cmo
@@ -13,9 +13,11 @@ import pandas as pd
 import scipy.signal as signal
 from tritonoa.data.stream import DataStream
 
-from vwdas import paths
+from vineyard import config
 
-plt.style.use(paths.config.jasa_style)
+JASA_STYLE = Path(config.get_path("jasa_style"))
+
+plt.style.use(JASA_STYLE)
 
 savefig_kwargs = {
     "bbox_inches": "tight",
@@ -136,7 +138,7 @@ def plot_shru_pectrograms(
     ds: DataStream,
     nperseg: int = 128,
     noverlap: float = 64,
-    nfft: int | None = 2 ** 12,
+    nfft: int | None = 2**12,
     fmin: float | None = None,
     fmax: float | None = None,
     vmin: float = 70.0,
