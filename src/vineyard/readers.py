@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Functions to read data from various file formats used in the project."""
 
 from dataclasses import dataclass, field
