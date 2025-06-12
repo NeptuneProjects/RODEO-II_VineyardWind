@@ -179,6 +179,7 @@ Thumbs.db
 
 # Project-specific files
 .vscode/
-reports/
-data/
+/references
+/reports
+/data
 workflow.md
