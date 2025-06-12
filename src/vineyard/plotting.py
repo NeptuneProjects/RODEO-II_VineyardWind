@@ -330,7 +330,7 @@ def plot_study_area(
     )
 
     ax.scatter(
-        *m(turbines_df["longitude"], turbines_df["latitude"]),
+        *m(turbines_df["lon"], turbines_df["lat"]),
         marker="h",
         c="yellow",
         edgecolors="k",
