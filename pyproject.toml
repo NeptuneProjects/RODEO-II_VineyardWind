@@ -3,7 +3,7 @@ requires = ["setuptools >= 80.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vwdas"  # Replace with your desired project name
+name = "vineyard_wind"  # Replace with your desired project name
 version = "0.0.1"
 description = "A local Python package for project imports"
 authors = [
