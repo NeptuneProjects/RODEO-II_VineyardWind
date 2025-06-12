@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Build inventories for raw acoustic data."""
+"""Build inventories for raw acoustic data.
+
+See `./config/inventory.toml` for configuration options.
+"""
 
 import argparse
 import logging
@@ -14,8 +17,8 @@ from tritonoa.data.time import ClockParameters
 from vineyard.config import get_path
 
 
-def main(args: argparse.Namespace) -> None:
-    with open(args.config, "rb") as f:
+def main(config_file: Path) -> None:
+    with open(config_file, "rb") as f:
         config = tomllib.load(f)
 
     for key in config:
@@ -23,7 +26,7 @@ def main(args: argparse.Namespace) -> None:
 
         data_cfg = config[key]["data"]
         clock_cfg = config[key].get("clock", None)
-        hyd_cfg = config[key]["hydrophone"]
+        hyd_cfg = config[key].get("hydrophone", None)
 
         if clock_cfg is None:
             clock_params = None
@@ -37,10 +40,13 @@ def main(args: argparse.Namespace) -> None:
                 offset_1=clock_cfg["offset_1"],
             )
 
-        signal_params = SignalParams(
-            gain=hyd_cfg["fixed_gain"],
-            sensitivity=hyd_cfg["sensitivity"],
-        )
+        if hyd_cfg is None:
+            signal_params = None
+        else:
+            signal_params = SignalParams(
+                gain=hyd_cfg["fixed_gain"],
+                sensitivity=hyd_cfg["sensitivity"],
+            )
 
         inv = Inventory()
         inv.build(
@@ -48,6 +54,7 @@ def main(args: argparse.Namespace) -> None:
             glob_pattern=data_cfg["glob_pattern"],
             clock_params=clock_params,
             conditioner=signal_params,
+            file_format=data_cfg.get("file_format", None),
         )
         savepath = Path(data_cfg["destination"])
         inv.save(savepath)
@@ -64,4 +71,4 @@ if __name__ == "__main__":
         default=get_path("inventory_config"),
     )
     args = parser.parse_args()
-    main(args)
+    main(args.config)
