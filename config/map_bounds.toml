@@ -1,0 +1,4 @@
+# Define the bounding box for the map
+
+bounds = [[-70.75, -70.149], [40.8, 41.401]]
+inset = [[-70.575, -70.525], [41.32, 41.36]]
