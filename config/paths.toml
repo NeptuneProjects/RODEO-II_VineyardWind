@@ -22,8 +22,11 @@ das_location = "./config/experiment/das_location.csv"
 # Turbine Locations
 raw_turbine_data = "./data/turbines.csv"
 turbine_config = "./config/experiment/turbines.csv"
-# SHRU Data Inventory
+# Acoustic Data Inventory
 inventory_config = "./config/inventory.toml"
+inventory_vla1 = "./data/acoustic/inventory_SHRU905_VLA1.csv"
+inventory_vla2 = "./data/acoustic/inventory_SHRU920_VLA2.csv"
+inventory_3dvha = "./data/acoustic/inventory_3DVHA.csv"
 # Dispersion data path
 dispersion_dir = "./data/dispersion"
 # Root path for pulse metrics
