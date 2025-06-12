@@ -11,8 +11,8 @@ import numpy as np
 from tritonoa.data.stream import DataStream
 
 import vwdas.paths as paths
-from vwdas.plotting import savefig_kwargs
-import vwdas.readers as readers
+from vineyard.plotting import savefig_kwargs
+import vineyard.readers as readers
 
 dotenv.load_dotenv()
 
@@ -36,9 +36,9 @@ def main(args: argparse.Namespace) -> None:
     
     np.save(args.out, ds.data[args.channel])
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(5, 2))
     ax.plot(ds.time_vector, ds.data[args.channel])
-    ax.set_title("Pile Driving Template")
+    # ax.set_title("Pile Driving Template")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Amplitude ($\\mu$Pa)")
     fig.savefig(paths.reports.figures / "pile_driving_template.png", **savefig_kwargs)
@@ -63,13 +63,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--start",
         type=str,
-        default="2023-12-01T22:00:51.5",
+        default="2023-12-01T21:36:25.0",
         help="Start time of the data to extract.",
     )
     parser.add_argument(
         "--end",
         type=str,
-        default="2023-12-01T22:00:52.75",
+        default="2023-12-01T21:36:30.00",
         help="End time of the data to extract.",
     )
     parser.add_argument(

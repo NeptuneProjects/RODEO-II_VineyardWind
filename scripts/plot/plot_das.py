@@ -10,7 +10,7 @@ import dotenv
 import matplotlib.pyplot as plt
 import numpy as np
 
-from vwdas.readers import read_tdms
+from vineyard.readers import read_tdms
 
 dotenv.load_dotenv()
 

@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 import vwdas.paths as paths
-from vwdas.readers import read_bbox
+from vineyard.readers import read_bbox
 
 
 def download_bathy(

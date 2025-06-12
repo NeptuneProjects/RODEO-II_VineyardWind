@@ -11,8 +11,8 @@ from tqdm import tqdm
 from tritonoa.data.stream import DataStream
 
 import vwdas.paths as paths
-from vwdas.plotting import plot_spectrogram, savefig_kwargs
-import vwdas.readers as readers
+from vineyard.plotting import plot_spectrogram, savefig_kwargs
+import vineyard.readers as readers
 
 dotenv.load_dotenv()
 

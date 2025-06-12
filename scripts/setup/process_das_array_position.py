@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from vwdas import paths
-from vwdas import readers
+from vineyard import readers
 
 import matplotlib.pyplot as plt
 import numpy as np
