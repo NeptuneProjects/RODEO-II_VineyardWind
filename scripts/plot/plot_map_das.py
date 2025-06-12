@@ -7,9 +7,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-import vwdas.paths as paths
-import vwdas.plotting as plotting
-import vwdas.readers as readers
+from vineyard.config import get_path
+import vineyard.plotting as plotting
+import vineyard.readers as readers
 
 map_kwargs = {
     "bounds": {
@@ -35,7 +35,7 @@ map_kwargs = {
 }
 
 
-def main(args: argparse.Namespace) -> None:
+def main(savepath: Path, bounds_file: Path) -> None:
     maps = ["bounds", "inset"]
 
     logging.info("Loading data and plotting map.")
@@ -47,8 +47,8 @@ def main(args: argparse.Namespace) -> None:
     fig, axs = plt.subplots(ncols=2, figsize=(8, 4.5), gridspec_kw={"wspace": 0.01})
 
     bboxes = {
-        "bounds": readers.read_bbox(paths.data.bathy_bounds, "bounds"),
-        "inset": readers.read_bbox(paths.data.bathy_bounds, "inset"),
+        "bounds": readers.read_bbox(bounds_file, "bounds"),
+        "inset": readers.read_bbox(bounds_file, "inset"),
     }
 
     active_turbine = {
@@ -61,7 +61,7 @@ def main(args: argparse.Namespace) -> None:
         "longitude": -70.5606,
         "latitude": 41.3321,
     }
-    
+
     for map_type, ax in zip(maps, axs):
         ax = plotting.plot_study_area(
             bathy,
@@ -79,7 +79,7 @@ def main(args: argparse.Namespace) -> None:
         )
         logging.info(f"Map `{map_type}` plotted.")
 
-    fname = args.savepath / f"map.png"
+    fname = savepath / f"map.png"
     fig.savefig(fname, dpi=300, bbox_inches="tight")
     plt.close(fig)
     logging.info(f"Map saved to {fname.resolve()}")
@@ -90,7 +90,25 @@ if __name__ == "__main__":
         description="Plot map of the study area with bathymetry and sensor locations."
     )
     parser.add_argument(
-        "-s", "--savepath", type=Path, default=paths.reports.figures, help="Path to save the figure."
+        "-i",
+        "--input_file",
+        type=Path,
+        default=get_path("bathy_file"),
+        help="Path to the bathymetry data file.",
+    )
+    parser.add_argument(
+        "-b",
+        "--bounds_file",
+        type=Path,
+        default=get_path("bounds_file"),
+        help="Path to the file containing bounding box coordinates.",
+    )
+    parser.add_argument(
+        "-s",
+        "--savepath",
+        type=Path,
+        default=get_path("figures"),
+        help="Path to save the figure.",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging."
@@ -99,4 +117,4 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO if args.verbose else logging.ERROR)
-    main(args)
+    main(args.savepath, args.bounds_file)
