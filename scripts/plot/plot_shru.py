@@ -22,10 +22,13 @@ from vineyard.plotting import plot_shru_pectrograms, savefig_kwargs
 
 dotenv.load_dotenv()
 
+nperseg = 256
 STFT_PARAMS = {
-    "nperseg": 64,
-    "noverlap": 60,
-    "nfft": 2**8,
+    "nperseg": nperseg,
+    "hop": int(0.05 * nperseg),
+    "nfft": 2**12,
+    "fmin": 10.0,
+    "fmax": 50.0,
 }
 
 
@@ -92,7 +95,7 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--sensor",
         type=str,
-        default="vla2",
+        default="vla1",
         choices=["vla1", "vla2"],
         help="Sensor to plot data for. Default is 'vla1'.",
     )
@@ -100,12 +103,14 @@ def setup_parser() -> ArgumentParser:
         "--start",
         type=str,
         default="2023-12-01T21:44:00",
+        # default="2023-12-01T22:25:00",
         help="Start time of the data to extract.",
     )
     parser.add_argument(
         "--end",
         type=str,
         default="2023-12-02T01:31:00",
+        # default="2023-12-01T22:26:00",
         help="End time of the data to extract.",
     )
     parser.add_argument(
@@ -129,7 +134,7 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--savefig",
         action="store_true",
-        default=True,
+        default=False,
         help="Save the figure instead of showing it.",
     )
     return parser
