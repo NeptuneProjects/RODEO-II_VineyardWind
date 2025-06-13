@@ -75,7 +75,10 @@ def main(
         end_str_read = convert_datetime64_to_string(end_time, readable=True)
 
         fig = plot_shru_pectrograms(ds, **STFT_PARAMS)
-        fig.suptitle(f"{sensor.upper()} Data from {start_str_read}Z to {end_str_read}Z", fontsize=12)
+        fig.suptitle(
+            f"{sensor.upper()} Data from {start_str_read}Z to {end_str_read}Z",
+            fontsize=12,
+        )
         if savefig:
             fname = f"{sensor}_{start_str}-{end_str}.png"
             fig.savefig(get_path(f"{sensor}_data_view") / fname, **savefig_kwargs)
