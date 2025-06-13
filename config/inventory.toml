@@ -33,3 +33,8 @@ directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
 glob_pattern = "3DVHA/acoustics/*.bin"
 destination = "data/acoustic/inventory_3DVHA.csv"
 file_format = "whoi3dvha"
+
+[3DVHA.hydrophone]
+# fixed_gain = [6.0, 6.0, 6.0, 6.0]            # dB
+sensitivity = [203.3, 203.3, 203.3, 203.2] # dB
+serial_number = ["238140", "238142", "238143", "238146"]
