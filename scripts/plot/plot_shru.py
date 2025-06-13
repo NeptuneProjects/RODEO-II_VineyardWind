@@ -2,13 +2,9 @@
 """Plot SHRU data.
 
 Suggested times:
-VLA 1:
-- Inventory: 2023-12-01T21:26:00 to 2023-12-02T01:13:00
-- Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
-
-VLA 2:
-- Inventory: 2023-12-01T21:44:00 to 2023-12-02T01:31:00
-- Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
+VLA 1: 2023-12-01T21:26:00 to 2023-12-02T01:13:00
+VLA 2: 2023-12-01T21:44:00 to 2023-12-02T01:31:00
+Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
 """
 
 from argparse import ArgumentParser
