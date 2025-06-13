@@ -13,6 +13,7 @@ netcdf4
 numpy
 pandas
 polars
+pymap3d
 pyproj
 python-dotenv
 scipy
