@@ -24,9 +24,14 @@ raw_turbine_data = "./data/turbines.csv"
 turbine_config = "./config/experiment/turbines.csv"
 # Acoustic Data Inventory
 inventory_config = "./config/inventory.toml"
-inventory_vla1 = "./data/acoustic/inventory_SHRU905_VLA1.csv"
-inventory_vla2 = "./data/acoustic/inventory_SHRU920_VLA2.csv"
-inventory_3dvha = "./data/acoustic/inventory_3DVHA.csv"
+vla1_inventory = "./data/acoustic/inventory_SHRU905_VLA1.csv"
+vla2_inventory = "./data/acoustic/inventory_SHRU920_VLA2.csv"
+3dvha_inventory = "./data/acoustic/inventory_3DVHA.csv"
+# Acoustic Data View
+vla1_data_view = "./data/acoustic/data_view/VLA1"
+vla2_data_view = "./data/acoustic/data_view/VLA2"
+3dvha_data_view = "./data/acoustic/data_view/3DVHA"
+
 # Dispersion data path
 dispersion_dir = "./data/dispersion"
 # Root path for pulse metrics
