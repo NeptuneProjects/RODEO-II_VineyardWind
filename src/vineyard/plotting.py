@@ -136,8 +136,8 @@ def plot_bathy(
 
 def plot_shru_pectrograms(
     ds: DataStream,
-    nperseg: int = 128,
-    noverlap: float = 64,
+    nperseg: int = 64,
+    noverlap: float = 60,
     nfft: int | None = 2**12,
     fmin: float | None = None,
     fmax: float | None = None,
