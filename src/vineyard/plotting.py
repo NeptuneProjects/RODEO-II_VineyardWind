@@ -137,7 +137,7 @@ def plot_bathy(
 def plot_shru_pectrograms(
     ds: DataStream,
     nperseg: int = 64,
-    noverlap: float = 60,
+    hop: int = 4,
     nfft: int | None = 2**12,
     fmin: float | None = None,
     fmax: float | None = None,
@@ -153,21 +153,18 @@ def plot_shru_pectrograms(
     if nfft is None:
         nfft = nperseg
 
+    channels = np.arange(ds.num_channels)
+    window = signal.windows.hann(nperseg)
+    STFT = signal.ShortTimeFFT(window, hop, fs, mfft=nfft, scale_to="psd")
+
     fig, axs = plt.subplots(
         ds.num_channels, 1, figsize=figsize, gridspec_kw={"hspace": 0.3}
     )
     fig.suptitle(title)
-
-    channels = np.arange(ds.num_channels)
-
     for i, channel in enumerate(channels):
-        f, t, Sxx = signal.spectrogram(
-            ds.data[i],
-            fs=fs,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            nfft=nfft,
-        )
+        Sxx = STFT.spectrogram(ds.data[i])
+        f = STFT.f
+        t = STFT.t(len(window))
 
         if fmin and fmax:
             Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
@@ -208,6 +205,7 @@ def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
     # return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
+    print(t)
     extent = (t[0], t[-1], f[0], f[-1])
     return ax.imshow(
         10 * np.log10(Sxx),
