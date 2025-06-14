@@ -134,7 +134,73 @@ def plot_bathy(
     return im, ax
 
 
-def plot_shru_pectrograms(
+def plot_3dvha_spectrograms(
+    ds: DataStream,
+    nperseg: int = 64,
+    hop: int = 4,
+    nfft: int | None = 2**12,
+    fmin: float | None = None,
+    fmax: float | None = None,
+    vmin: float = -60.0,
+    vmax: float = 0.0,
+    figsize: tuple[float] = (8, 6),
+    xlabel: str = "Time (s)",
+    ylabel: str = "Frequency (Hz)",
+    title: str = None,
+) -> plt.Figure:
+    fs = ds.stats.sampling_rate
+    channels = np.arange(ds.num_channels)
+    window = signal.windows.hann(nperseg)
+    STFT = signal.ShortTimeFFT(window, hop, fs, mfft=nfft, scale_to="psd")
+
+    fig, axs = plt.subplots(
+        ds.num_channels, 1, figsize=figsize, gridspec_kw={"hspace": 0.3}
+    )
+    fig.suptitle(title)
+    for i, channel in enumerate(channels):
+        Sxx = STFT.spectrogram(ds.data[i])
+        f = STFT.f
+        t = STFT.t(ds.num_samples)
+
+        if fmin and fmax:
+            Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
+            f = f[(f >= fmin) & (f <= fmax)]
+        elif fmin:
+            Sxx = Sxx[f >= fmin, :]
+            f = f[f >= fmin]
+        elif fmax:
+            Sxx = Sxx[f <= fmax, :]
+            f = f[f <= fmax]
+
+        if vmin is None:
+            vmin = Sxx.min()
+        if vmax is None:
+            vmax = Sxx.max()
+
+        # Normalize:
+        Sxx /= Sxx.max()
+
+        ax = axs[i]
+        im = plot_spectrogram(f, t, Sxx, ax=ax, vmin=vmin, vmax=vmax)
+
+        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
+        if channel == channels[-1]:
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+
+        cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+        cbar = fig.colorbar(im, cax=cax)
+        cbar.set_label(f"PSD ($\\mathrm{{{ds.stats.units}}}^2 / \\mathrm{{Hz}}$)")
+
+    if title:
+        fig.suptitle(title, fontsize=12, y=0.95)
+    return fig
+
+
+def plot_shru_spectrograms(
     ds: DataStream,
     nperseg: int = 64,
     hop: int = 4,
@@ -149,10 +215,6 @@ def plot_shru_pectrograms(
     title: str = None,
 ) -> plt.Figure:
     fs = ds.stats.sampling_rate
-
-    if nfft is None:
-        nfft = nperseg
-
     channels = np.arange(ds.num_channels)
     window = signal.windows.hann(nperseg)
     STFT = signal.ShortTimeFFT(window, hop, fs, mfft=nfft, scale_to="psd")
@@ -164,7 +226,7 @@ def plot_shru_pectrograms(
     for i, channel in enumerate(channels):
         Sxx = STFT.spectrogram(ds.data[i])
         f = STFT.f
-        t = STFT.t(len(window))
+        t = STFT.t(ds.num_samples)
 
         if fmin and fmax:
             Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
@@ -204,8 +266,6 @@ def plot_shru_pectrograms(
 def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
     if ax is None:
         ax = plt.gca()
-    # return ax.pcolormesh(t, f, 10 * np.log10(Sxx), cmap="inferno", vmin=vmin, vmax=vmax)
-    print(t)
     extent = (t[0], t[-1], f[0], f[-1])
     return ax.imshow(
         10 * np.log10(Sxx),
