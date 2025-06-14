@@ -8,6 +8,7 @@ Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
 """
 
 from argparse import ArgumentParser
+from collections.abc import Sequence
 import logging
 
 import dotenv
@@ -32,13 +33,24 @@ STFT_PARAMS = {
 }
 
 
-def condition_data(ds: DataStream, decimation_factor: int = 40) -> DataStream:
+def condition_data(
+    ds: DataStream,
+    target_fs: float | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+) -> DataStream:
+    if target_fs is None and filt_type is None and filt_freq is None:
+        return ds
+
     ds_filt = ds.copy()
-    ds_filt.decimate(decimation_factor)
-    # ds_filt.filter(
-    #     filt_type="highpass",
-    #     freq=1.0,
-    # )
+    if target_fs is not None:
+        dec_factor = int(np.round(ds_filt.fs / target_fs))
+        ds_filt.decimate(dec_factor)
+    if filt_type is not None and filt_freq is not None:
+        ds_filt.filter(
+            filt_type=filt_type,
+            freq=filt_freq,
+        )
     return ds_filt
 
 
@@ -46,10 +58,10 @@ def main(
     sensor: str,
     start: str,
     end: str,
-    decimation: int,
     multi: bool,
     interval: float,
     savefig: bool,
+    target_fs: float,
 ) -> None:
 
     inv = get_path(f"{sensor}_inventory")
@@ -65,7 +77,7 @@ def main(
         end_time = start_time + interval
         logging.info(f"Plotting {sensor.upper()} data from {start_time} to {end_time}")
         ds = condition_data(
-            read_inventory(inv, start_time, end_time), decimation_factor=decimation
+            read_inventory(inv, start_time, end_time), target_fs=target_fs
         )
 
         start_str = convert_datetime64_to_string(start_time)
@@ -114,12 +126,6 @@ def setup_parser() -> ArgumentParser:
         help="End time of the data to extract.",
     )
     parser.add_argument(
-        "--decimation",
-        type=int,
-        default=40,
-        help="Decimation factor for the data.",
-    )
-    parser.add_argument(
         "--multi",
         action="store_true",
         default=True,
@@ -137,6 +143,12 @@ def setup_parser() -> ArgumentParser:
         default=False,
         help="Save the figure instead of showing it.",
     )
+    parser.add_argument(
+        "--target_fs",
+        type=int,
+        default=40,
+        help="Decimation factor for the data.",
+    )
     return parser
 
 
@@ -147,8 +159,8 @@ if __name__ == "__main__":
         args.sensor,
         args.start,
         args.end,
-        args.decimation,
         args.multi,
         args.interval,
         args.savefig,
+        args.target_fs,
     )
