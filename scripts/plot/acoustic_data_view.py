@@ -2,7 +2,7 @@
 """Plot acoustic data (time series & spectrograms) from 3DVHA, VLA1, and VLA2.
 
 Times of interest:
-3DVHA:
+3DVHA: 2023-12-01T21:00:00 to 2023-12-01T23:30:00
 VLA 1: 2023-12-01T21:26:00 to 2023-12-02T01:13:00
 VLA 2: 2023-12-01T21:44:00 to 2023-12-02T01:31:00
 Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
@@ -70,7 +70,7 @@ def dataloader_3dvha(
 ):
     def dataloader(start_time: np.datetime64, end_time: np.datetime64) -> DataStream:
         ds_raw = condition_data(
-            read_inventory(inventory, start_time, end_time),
+            read_inventory(inventory, start_time, end_time, metadata=metadata),
             target_fs=target_fs,
             filt_type=filt_type,
             filt_freq=filt_freq,
@@ -78,6 +78,19 @@ def dataloader_3dvha(
         ds = ds_raw.copy()
         ds.data[0:3] = -ds_raw.data[0:3]
         return ds
+
+    metadata = {
+        "channel_names": [
+            "3DVHA Front Hydrophone",
+            "3DVHA Right Hydrophone",
+            "3DVHA Left Hydrophone",
+            "3DVHA Back Hydrophone",
+            "3DVHA Particle Motion X",
+            "3DVHA Particle Motion Y",
+            "3DVHA Particle Motion Z",
+            "3DVHA Omni Hydrophone",
+        ]
+    }
 
     return dataloader
 
@@ -141,7 +154,7 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--savefig",
         action="store_true",
-        default=False,
+        default=True,
         help="Save the figure instead of showing it.",
     )
     parser.add_argument(
@@ -158,7 +171,7 @@ def setup_parser() -> ArgumentParser:
         help="Filter type to apply to the data.",
     )
     parser.add_argument(
-        "--filt_freq",
+        "--filt-freq",
         type=float,
         nargs="+",
         default=10.0,
@@ -197,6 +210,16 @@ def setup_plotting(
     return plotter, dataloader
 
 
+def format_times(
+    start_time: np.datetime64, end_time: np.datetime64
+) -> tuple[str, str, str, str]:
+    start_str = convert_datetime64_to_string(start_time)
+    end_str = convert_datetime64_to_string(end_time)
+    start_str_read = convert_datetime64_to_string(start_time, readable=True)
+    end_str_read = convert_datetime64_to_string(end_time, readable=True)
+    return start_str, end_str, start_str_read, end_str_read
+
+
 def main(
     sensor: str,
     start: str,
@@ -226,23 +249,22 @@ def main(
 
     for start_time in np.arange(start, end, interval):
         end_time = start_time + interval
-        logging.info(f"Plotting {sensor.upper()} data from {start_time} to {end_time}")
-        ds = dataloader(start_time, end_time)
-        fig = plotter(ds, **STFT_PARAMS)
-
-        start_str = convert_datetime64_to_string(start_time)
-        end_str = convert_datetime64_to_string(end_time)
-        start_str_read = convert_datetime64_to_string(start_time, readable=True)
-        end_str_read = convert_datetime64_to_string(end_time, readable=True)
-
-        fig.suptitle(
-            f"{sensor.upper()} Data from {start_str_read}Z to {end_str_read}Z",
-            fontsize=12,
+        start_str, end_str, start_str_read, end_str_read = format_times(
+            start_time, end_time
         )
+
+        title = f"{sensor.upper()} data from {start_str_read}Z to {end_str_read}Z"
+
+        logging.info(f"Plotting {title}")
+        ds = dataloader(start_time, end_time)
+        fig = plotter(ds, title=title, **STFT_PARAMS)
+
         if savefig:
             fname = f"{sensor}_{start_str}-{end_str}.png"
-            fig.savefig(get_path(f"{sensor}_data_view") / fname, **savefig_kwargs)
+            file = get_path(f"{sensor}_data_view") / fname
+            fig.savefig(file, **savefig_kwargs)
             plt.close(fig)
+            logging.info(f"Saved figure to {file.resolve()}")
             continue
         if multi:
             plt.draw()
@@ -263,5 +285,5 @@ if __name__ == "__main__":
         args.savefig,
         target_fs=args.target_fs,
         filt_type=args.filter,
-        filt_freq=args.filt_freq,
+        filt_freq=args.filt_freq[0] if len(args.filt_freq) == 1 else args.filt_freq,
     )

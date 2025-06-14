@@ -143,11 +143,12 @@ def plot_3dvha_spectrograms(
     fmax: float | None = None,
     vmin: float = -60.0,
     vmax: float = 0.0,
-    figsize: tuple[float] = (8, 6),
+    figsize: tuple[float] = (8, 10),
     xlabel: str = "Time (s)",
     ylabel: str = "Frequency (Hz)",
     title: str = None,
 ) -> plt.Figure:
+    title_kwargs = {"ha": "left", "x": 0, "y": 0.95}
     fs = ds.stats.sampling_rate
     channels = np.arange(ds.num_channels)
     window = signal.windows.hann(nperseg)
@@ -183,7 +184,10 @@ def plot_3dvha_spectrograms(
         ax = axs[i]
         im = plot_spectrogram(f, t, Sxx, ax=ax, vmin=vmin, vmax=vmax)
 
-        ax.set_title(f"Channel {channel}", fontsize=10, ha="left", x=0)
+        if ds.stats.metadata.get("channel_names", None) is not None:
+            ax.set_title(ds.stats.metadata["channel_names"][channel], **title_kwargs)
+        else:
+            ax.set_title(f"Channel {channel}", **title_kwargs)
         if channel == channels[-1]:
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
@@ -196,7 +200,7 @@ def plot_3dvha_spectrograms(
         cbar.set_label(f"PSD ($\\mathrm{{{ds.stats.units}}}^2 / \\mathrm{{Hz}}$)")
 
     if title:
-        fig.suptitle(title, fontsize=12, y=0.95)
+        fig.suptitle(title, fontsize=12, y=0.92)
     return fig
 
 
