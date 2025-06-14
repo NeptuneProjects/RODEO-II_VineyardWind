@@ -134,6 +134,95 @@ def plot_bathy(
     return im, ax
 
 
+def plot_3dvha_data(
+    ds: DataStream,
+    nperseg: int = 64,
+    hop: int = 4,
+    nfft: int | None = 2**12,
+    fmin: float | None = None,
+    fmax: float | None = None,
+    vmin: float = -60.0,
+    vmax: float = 0.0,
+    figsize: tuple[float] = (16, 9),
+    xlabel_t: str = "Time",
+    xlabel_f: str = "Time (s)",
+    ylabel_t: str = "Amplitude",
+    ylabel_f: str = "Frequency (Hz)",
+    title: str = None,
+) -> plt.Figure:
+    subplot_hspace = 0.25
+    title_kwargs = {"ha": "left", "x": 0.0, "y": 0.95}
+
+    fs = ds.stats.sampling_rate
+    channels = np.arange(ds.num_channels)
+    window = signal.windows.hann(nperseg)
+    STFT = signal.ShortTimeFFT(window, hop, fs, mfft=nfft, scale_to="psd")
+
+    fig = plt.figure(figsize=figsize)
+    subfigs = fig.subfigures(1, 2, wspace=-0.15)
+
+    tfig = subfigs[0]
+    taxs = tfig.subplots(ds.num_channels, 1, gridspec_kw={"hspace": subplot_hspace})
+    ffig = subfigs[1]
+    faxs = ffig.subplots(ds.num_channels, 1, gridspec_kw={"hspace": subplot_hspace})
+
+    for i, channel in enumerate(channels):
+        tax = taxs[i]
+        tax.plot(ds.time_vector, ds.data[i] / np.max(np.abs(ds.data[i])))
+        amp_lim = 1.1
+        tax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
+        tax.set_ylim(-amp_lim, amp_lim)
+
+        if ds.stats.metadata.get("channel_names", None) is not None:
+            tax.set_title(ds.stats.metadata["channel_names"][channel], **title_kwargs)
+        else:
+            tax.set_title(f"Channel {channel}", **title_kwargs)
+
+        Sxx = STFT.spectrogram(ds.data[i])
+        f = STFT.f
+        t = STFT.t(ds.num_samples)
+
+        if fmin and fmax:
+            Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
+            f = f[(f >= fmin) & (f <= fmax)]
+        elif fmin:
+            Sxx = Sxx[f >= fmin, :]
+            f = f[f >= fmin]
+        elif fmax:
+            Sxx = Sxx[f <= fmax, :]
+            f = f[f <= fmax]
+
+        # Normalize:
+        Sxx /= Sxx.max()
+
+        if vmin is None:
+            vmin = Sxx.min()
+        if vmax is None:
+            vmax = Sxx.max()
+
+        fax = faxs[i]
+        im = plot_spectrogram(f, t, Sxx, ax=fax, vmin=vmin, vmax=vmax)
+
+        if channel == channels[-1]:
+            tax.set_xlabel(xlabel_t)
+            tax.set_ylabel(f"{ylabel_t} ($\\mathrm{{{ds.stats.units}}}$)")
+            fax.set_xlabel(xlabel_f)
+            fax.set_ylabel(ylabel_f)
+        else:
+            tax.set_xticklabels([])
+            tax.set_xlabel("")
+            fax.set_xticklabels([])
+            fax.set_xlabel("")
+
+        cax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
+        cbar = fig.colorbar(im, cax=cax)
+        cbar.set_label(f"PSD ($\\mathrm{{{ds.stats.units}}}^2 / \\mathrm{{Hz}}$)")
+
+    if title:
+        fig.suptitle(title, fontsize=12, y=0.92)
+    return fig
+
+
 def plot_3dvha_spectrograms(
     ds: DataStream,
     nperseg: int = 64,
@@ -219,7 +308,7 @@ def plot_shru_data(
     ylabel_f: str = "Frequency (Hz)",
     title: str = None,
 ) -> plt.Figure:
-    subplot_hspace = 0.2
+    subplot_hspace = 0.1
 
     fs = ds.stats.sampling_rate
     channels = np.arange(ds.num_channels)
@@ -267,7 +356,7 @@ def plot_shru_data(
 
         if channel == channels[-1]:
             tax.set_xlabel(xlabel_t)
-            tax.set_ylabel(ylabel_t)
+            tax.set_ylabel(f"{ylabel_t} ($\\mathrm{{{ds.stats.units}}}$)")
             fax.set_xlabel(xlabel_f)
             fax.set_ylabel(ylabel_f)
         else:

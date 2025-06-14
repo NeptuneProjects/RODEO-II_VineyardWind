@@ -23,8 +23,8 @@ from tritonoa.data.reader import read_inventory
 
 from vineyard.config import get_path
 from vineyard.plotting import (
-    plot_3dvha_spectrograms,
-    plot_shru_spectrograms,
+    plot_3dvha_data,
+    plot_shru_data,
     savefig_kwargs,
 )
 
@@ -154,7 +154,7 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--savefig",
         action="store_true",
-        default=True,
+        default=False,
         help="Save the figure instead of showing it.",
     )
     parser.add_argument(
@@ -174,7 +174,7 @@ def setup_parser() -> ArgumentParser:
         "--filt-freq",
         type=float,
         nargs="+",
-        default=10.0,
+        default=[10.0],
         help="Frequency or frequencies for the filter.",
     )
     return parser
@@ -195,14 +195,14 @@ def setup_plotting(
             ]
         case "3dvha":
             inv = get_path(f"{sensor}_inventory")
-            plotter = plot_3dvha_spectrograms
+            plotter = plot_3dvha_data
             dataloader = dataloader_3dvha(
                 inv, target_fs=target_fs, filt_type=filt_type, filt_freq=filt_freq
             )
             logging.info(f"Using inventory for {sensor.upper()}: {inv.resolve()}")
         case "vla1" | "vla2":
             inv = get_path(f"{sensor}_inventory")
-            plotter = plot_shru_spectrograms
+            plotter = plot_shru_data
             dataloader = dataloader_shru(
                 inv, target_fs=target_fs, filt_type=filt_type, filt_freq=filt_freq
             )
