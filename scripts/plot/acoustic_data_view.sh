@@ -9,7 +9,7 @@ python ./scripts/plot/acoustic_data_view.py \
     --multi \
     --interval 60 \
     --savefig \
-    --target_fs 250.0 \
+    --target-fs 250.0 \
     --filter highpass \
     --filt-freq 10.0
 
@@ -20,7 +20,7 @@ python ./scripts/plot/acoustic_data_view.py \
     --multi \
     --interval 60 \
     --savefig \
-    --target_fs 250.0 \
+    --target-fs 250.0 \
     --filter highpass \
     --filt-freq 10.0
 
@@ -31,6 +31,6 @@ python ./scripts/plot/acoustic_data_view.py \
     --multi \
     --interval 60 \
     --savefig \
-    --target_fs 250.0 \
+    --target-fs 250.0 \
     --filter highpass \
     --filt-freq 10.0

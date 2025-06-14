@@ -158,7 +158,7 @@ def setup_parser() -> ArgumentParser:
         help="Save the figure instead of showing it.",
     )
     parser.add_argument(
-        "--target_fs",
+        "--target-fs",
         type=float,
         default=1000.0,
         help="Decimation factor for the data.",
