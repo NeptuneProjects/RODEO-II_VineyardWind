@@ -3,6 +3,8 @@ from pathlib import Path
 import cmasher as cmr
 import cmocean as cmo
 import matplotlib.colors as colors
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from matplotlib.patches import Polygon
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
@@ -68,9 +70,9 @@ def plot_bathy(
     lonvec: npt.NDArray[np.float64],
     latvec: npt.NDArray[np.float64],
     m: Basemap,
-    ax: plt.Axes | None = None,
+    ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
-) -> tuple[plt.contourf, plt.Axes]:
+) -> tuple[plt.contourf, Axes]:
 
     data[data > 0] = 0.1
 
@@ -149,7 +151,7 @@ def plot_3dvha_data(
     ylabel_t: str = "Amplitude",
     ylabel_f: str = "Frequency (Hz)",
     title: str = None,
-) -> plt.Figure:
+) -> Figure:
     subplot_hspace = 0.25
     title_kwargs = {"ha": "left", "x": 0.0, "y": 0.95}
 
@@ -236,7 +238,7 @@ def plot_3dvha_spectrograms(
     xlabel: str = "Time (s)",
     ylabel: str = "Frequency (Hz)",
     title: str = None,
-) -> plt.Figure:
+) -> Figure:
     title_kwargs = {"ha": "left", "x": 0, "y": 0.95}
     fs = ds.stats.sampling_rate
     channels = np.arange(ds.num_channels)
@@ -292,6 +294,124 @@ def plot_3dvha_spectrograms(
     return fig
 
 
+def plot_all_acoustic_data(
+    data: list[DataStream],
+    nperseg: int = 64,
+    hop: int = 4,
+    nfft: int | None = 2**12,
+    fmin: float | None = None,
+    fmax: float | None = None,
+    figsize: tuple[float] = (16, 9),
+    title: str = None,
+) -> None:
+    def extract_data(data: list[DataStream]):
+        ch_names = []
+        data_vectors = []
+        time_vectors = []
+        sampling_rates = []
+        Sxx_matrices = []
+        Sxx_freqs = []
+        Sxx_times = []
+        units = []
+
+        for ds in data:
+            ch_names.extend(ds.stats.metadata["channel_names"])
+            for i in range(ds.num_channels):
+                data_vectors.append(ds.data[i])
+                time_vectors.append(ds.time_vector)
+                sampling_rates.append(ds.stats.sampling_rate)
+
+                fs = ds.stats.sampling_rate
+                window = signal.windows.hann(nperseg)
+                STFT = signal.ShortTimeFFT(window, hop, fs, mfft=nfft, scale_to="psd")
+
+                Sxx_matrices.append(STFT.spectrogram(ds.data[i]))
+                Sxx_freqs.append(STFT.f)
+                Sxx_times.append(STFT.t(ds.num_samples))
+
+                units.append(ds.stats.units)
+
+        return (
+            ch_names,
+            data_vectors,
+            time_vectors,
+            sampling_rates,
+            Sxx_matrices,
+            Sxx_freqs,
+            Sxx_times,
+            units,
+        )
+
+    (
+        ch_names,
+        data_vectors,
+        time_vectors,
+        sampling_rates,
+        Sxx_matrices,
+        Sxx_freqs,
+        Sxx_times,
+        units,
+    ) = extract_data(data)
+
+    num_rows = len(ch_names)
+
+    subplot_hspace = 0.25
+    title_kwargs = {"ha": "left", "x": 0.05, "y": 0.95}
+
+    fig = plt.figure(figsize=figsize)
+    subfigs = fig.subfigures(1, 2, wspace=-0.15)
+
+    tfig = subfigs[0]
+    taxs = tfig.subplots(num_rows, 1, gridspec_kw={"hspace": subplot_hspace})
+    ffig = subfigs[1]
+    faxs = ffig.subplots(num_rows, 1, gridspec_kw={"hspace": subplot_hspace})
+    
+    for i in range(num_rows):
+        time = time_vectors[i]
+        tax = taxs[i]
+        tax.plot(time, data_vectors[i])
+        tax.set_xlim(time[0], time[-1])
+        tax.set_title(ch_names[i], **title_kwargs)
+
+        f = Sxx_freqs[i]
+        t = Sxx_times[i]
+        Sxx = Sxx_matrices[i]
+        if fmin and fmax:
+            Sxx = Sxx[(f >= fmin) & (f <= fmax), :]
+            f = f[(f >= fmin) & (f <= fmax)]
+        elif fmin:
+            Sxx = Sxx[f >= fmin, :]
+            f = f[f >= fmin]
+        elif fmax:
+            Sxx = Sxx[f <= fmax, :]
+            f = f[f <= fmax]
+
+        # Normalize:
+        Sxx /= Sxx.max()
+
+        fax = faxs[i]
+        im = plot_spectrogram(f, t, Sxx, ax=fax, vmin=-60.0, vmax=0.0)
+
+        if i == num_rows - 1:
+            tax.set_xlabel("Time")
+            tax.set_ylabel(f"Amplitude ($\\mathrm{{{units[i]}}}$)")
+            fax.set_xlabel("Time (s)")
+            fax.set_ylabel("Frequency (Hz)")
+        else:
+            tax.set_xticklabels([])
+            tax.set_xlabel("")
+            fax.set_xticklabels([])
+            fax.set_xlabel("")
+        
+        cax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
+        cbar = fig.colorbar(im, cax=cax)
+        cbar.set_label(f"PSD (Normalized dB)")
+
+    if title:
+        fig.suptitle(title, fontsize=12, y=0.92)
+    return fig
+
+
 def plot_shru_data(
     ds: DataStream,
     nperseg: int = 64,
@@ -307,7 +427,7 @@ def plot_shru_data(
     ylabel_t: str = "Amplitude",
     ylabel_f: str = "Frequency (Hz)",
     title: str = None,
-) -> plt.Figure:
+) -> Figure:
     subplot_hspace = 0.1
 
     fs = ds.stats.sampling_rate
@@ -329,9 +449,10 @@ def plot_shru_data(
         amp_lim = 1.1 * np.max(np.abs(ds.data))
         tax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
         tax.set_ylim(-amp_lim, amp_lim)
-        tax.set_title(f"Channel {channel}", ha="center", va="center", x=-0.075, y=0.5, rotation=90)
+        tax.set_title(
+            f"Channel {channel}", ha="center", va="center", x=-0.075, y=0.5, rotation=90
+        )
 
-        
         Sxx = STFT.spectrogram(ds.data[i])
         f = STFT.f
         t = STFT.t(ds.num_samples)
@@ -387,7 +508,7 @@ def plot_shru_spectrograms(
     xlabel: str = "Time (s)",
     ylabel: str = "Frequency (Hz)",
     title: str = None,
-) -> plt.Figure:
+) -> Figure:
     fs = ds.stats.sampling_rate
     channels = np.arange(ds.num_channels)
     window = signal.windows.hann(nperseg)
@@ -436,7 +557,7 @@ def plot_shru_spectrograms(
     return fig
 
 
-def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
+def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> Axes:
     if ax is None:
         ax = plt.gca()
     extent = (t[0], t[-1], f[0], f[-1])
@@ -464,7 +585,7 @@ def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> plt.Axes:
 #     vmin: float = 70,
 #     vmax: float = 130,
 #     ax=None,
-# ) -> plt.Axes:
+# ) -> Axes:
 #     fs = ds.stats.sampling_rate
 
 #     f, t, Sxx = signal.spectrogram(
@@ -504,7 +625,7 @@ def plot_study_area(
     active_turbine: dict | None = None,
     sound_trap: dict | None = None,
     bounds: list[list[float]] | None = None,
-    ax: plt.Axes | None = None,
+    ax: Axes | None = None,
     scale_bar: float = 1.0,
     shallowest_contour_depth: float = 0.0,
     legend_loc: str | None = None,
@@ -515,7 +636,7 @@ def plot_study_area(
     inset: list[list[float]] | None = None,
     *args,
     **kwargs,
-) -> plt.Axes:
+) -> Axes:
     if bounds is None:
         llcrnrlat = np.min(latvec)
         urcrnrlat = np.max(latvec)

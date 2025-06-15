@@ -2,14 +2,17 @@
 """Plot acoustic data (time series & spectrograms) from 3DVHA, VLA1, and VLA2.
 
 Times of interest:
+  ALL: 2023-12-01T21:44:00 to 2023-12-01T23:30:00
 3DVHA: 2023-12-01T21:00:00 to 2023-12-01T23:30:00
 VLA 1: 2023-12-01T21:26:00 to 2023-12-02T01:13:00
 VLA 2: 2023-12-01T21:44:00 to 2023-12-02T01:31:00
-Fin whale: 2023-12-01T21:26:00 to 2023-12-01T23:19:00
+
+Fin whale: 2023-12-01T21:00:00 to 2023-12-01T23:19:00
 """
 
 from argparse import ArgumentParser
 from collections.abc import Sequence
+from functools import partial
 import logging
 from pathlib import Path
 from typing import Callable
@@ -24,13 +27,13 @@ from tritonoa.data.reader import read_inventory
 from vineyard.config import get_path
 from vineyard.plotting import (
     plot_3dvha_data,
+    plot_all_acoustic_data,
     plot_shru_data,
     savefig_kwargs,
 )
 
 dotenv.load_dotenv()
 
-SENSORS = ["3dvha", "vla1", "vla2"]
 nperseg = 256
 STFT_PARAMS = {
     "nperseg": nperseg,
@@ -38,6 +41,49 @@ STFT_PARAMS = {
     "nfft": 2**12,
     "fmin": 0.0,
     "fmax": 250.0,
+}
+SENSORS = {
+    "all": {
+        "channels_to_plot": {
+            "3dvha": list(range(4, 8)),
+            "vla1": [3],
+            "vla2": [1],
+        },
+    },
+    "3dvha": {
+        "metadata": {
+            "channel_names": [
+                "3DVHA Front Hydrophone",
+                "3DVHA Right Hydrophone",
+                "3DVHA Left Hydrophone",
+                "3DVHA Back Hydrophone",
+                "3DVHA Particle Motion X",
+                "3DVHA Particle Motion Y",
+                "3DVHA Particle Motion Z",
+                "3DVHA Omni Hydrophone",
+            ]
+        }
+    },
+    "vla1": {
+        "metadata": {
+            "channel_names": [
+                "VLA1 Channel 1",
+                "VLA1 Channel 2",
+                "VLA1 Channel 3",
+                "VLA1 Channel 4",
+            ]
+        }
+    },
+    "vla2": {
+        "metadata": {
+            "channel_names": [
+                "VLA2 Channel 1",
+                "VLA2 Channel 2",
+                "VLA2 Channel 3",
+                "VLA2 Channel 4",
+            ]
+        }
+    },
 }
 
 
@@ -64,56 +110,96 @@ def condition_data(
 
 def dataloader_3dvha(
     inventory: Path,
+    start_time: np.datetime64,
+    end_time: np.datetime64,
+    channels: int | list[int] | None = None,
     target_fs: float | None = None,
     filt_type: str | None = None,
     filt_freq: float | Sequence[float] | None = None,
-):
-    def dataloader(start_time: np.datetime64, end_time: np.datetime64) -> DataStream:
-        ds_raw = condition_data(
-            read_inventory(inventory, start_time, end_time, metadata=metadata),
+    metadata: dict | None = None,
+) -> DataStream:
+    ds_raw = condition_data(
+        read_inventory(
+            inventory, start_time, end_time, channels=channels, metadata=metadata
+        ),
+        target_fs=target_fs,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+    )
+    ds = ds_raw.copy()
+    ds.data[0:3] = -ds_raw.data[0:3]
+    return ds
+
+
+def dataloader_all_sensors(
+    inventories: list[Path],
+    start_time: np.datetime64,
+    end_time: np.datetime64,
+    target_fs: float | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+) -> list[DataStream]:
+    def load_and_format_data(
+        sensor: str, dataloader: Callable, inventory: Path
+    ) -> DataStream:
+        channels = SENSORS["all"]["channels_to_plot"][sensor]
+        metadata = SENSORS[sensor]["metadata"]
+        metadata["channel_names"] = remove_channel_metadata(
+            channels, metadata["channel_names"]
+        )
+        return dataloader(
+            inventory,
+            start_time,
+            end_time,
+            channels=channels,
             target_fs=target_fs,
             filt_type=filt_type,
             filt_freq=filt_freq,
+            metadata=metadata,
         )
-        ds = ds_raw.copy()
-        ds.data[0:3] = -ds_raw.data[0:3]
-        return ds
 
-    metadata = {
-        "channel_names": [
-            "3DVHA Front Hydrophone",
-            "3DVHA Right Hydrophone",
-            "3DVHA Left Hydrophone",
-            "3DVHA Back Hydrophone",
-            "3DVHA Particle Motion X",
-            "3DVHA Particle Motion Y",
-            "3DVHA Particle Motion Z",
-            "3DVHA Omni Hydrophone",
-        ]
-    }
+    def remove_channel_metadata(indexes: list[int], data: list) -> None:
+        return [i for j, i in enumerate(data) if j in indexes]
 
-    return dataloader
+    sensors = [s for s in SENSORS.keys() if s != "all"]
+    dataloaders = [dataloader_3dvha, dataloader_shru, dataloader_shru]
 
+    data = []
+    for sensor, dataloader, inventory in zip(sensors, dataloaders, inventories):
+        logging.info(f"Loading data for {sensor.upper()} from {inventory.resolve()}")
+        data.append(load_and_format_data(sensor, dataloader, inventory))
 
-def dataloader_all_sensors():
-    return
+    return data
 
 
 def dataloader_shru(
     inventory: Path,
+    start_time: np.datetime64,
+    end_time: np.datetime64,
+    channels: int | list[int] | None = None,
     target_fs: float | None = None,
     filt_type: str | None = None,
     filt_freq: float | Sequence[float] | None = None,
-) -> Callable:
-    def dataloader(start_time: np.datetime64, end_time: np.datetime64) -> DataStream:
-        return condition_data(
-            read_inventory(inventory, start_time, end_time),
-            target_fs=target_fs,
-            filt_type=filt_type,
-            filt_freq=filt_freq,
-        )
+    metadata: dict | None = None,
+) -> DataStream:
+    return condition_data(
+        read_inventory(
+            inventory, start_time, end_time, channels=channels, metadata=metadata
+        ),
+        target_fs=target_fs,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+    )
 
-    return dataloader
+
+def format_times(
+    start_time: np.datetime64, end_time: np.datetime64
+) -> tuple[str, str, str, str]:
+    start_str = convert_datetime64_to_string(start_time)
+    end_str = convert_datetime64_to_string(end_time)
+    start_str_read = convert_datetime64_to_string(start_time, readable=True)
+    end_str_read = convert_datetime64_to_string(end_time, readable=True)
+    return start_str, end_str, start_str_read, end_str_read
 
 
 def setup_parser() -> ArgumentParser:
@@ -121,8 +207,8 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--sensor",
         type=str,
-        default="3dvha",
-        choices=SENSORS + ["all"],
+        default="all",
+        choices=list(SENSORS.keys()) + ["all"],
         help="Sensor to plot data for. Default is 'vla1'.",
     )
     parser.add_argument(
@@ -188,36 +274,44 @@ def setup_plotting(
 ) -> tuple[Callable, Callable]:
     match sensor:
         case "all":
-            invs = [get_path(f"{s}_inventory") for s in SENSORS]
+            invs = [get_path(f"{s}_inventory") for s in SENSORS.keys() if s != "all"]
+            plotter = plot_all_acoustic_data
+            dataloader = partial(
+                dataloader_all_sensors,
+                invs,
+                target_fs=target_fs,
+                filt_type=filt_type,
+                filt_freq=filt_freq,
+            )
             [
                 logging.info(f"Using inventory for {sensor.upper()}: {inv.resolve()}")
-                for sensor, inv in zip(SENSORS, invs)
+                for sensor, inv in zip(SENSORS.keys(), invs)
             ]
         case "3dvha":
             inv = get_path(f"{sensor}_inventory")
             plotter = plot_3dvha_data
-            dataloader = dataloader_3dvha(
-                inv, target_fs=target_fs, filt_type=filt_type, filt_freq=filt_freq
+            dataloader = partial(
+                dataloader_3dvha,
+                inv,
+                target_fs=target_fs,
+                filt_type=filt_type,
+                filt_freq=filt_freq,
+                metadata=SENSORS[sensor]["metadata"],
             )
             logging.info(f"Using inventory for {sensor.upper()}: {inv.resolve()}")
         case "vla1" | "vla2":
             inv = get_path(f"{sensor}_inventory")
             plotter = plot_shru_data
-            dataloader = dataloader_shru(
-                inv, target_fs=target_fs, filt_type=filt_type, filt_freq=filt_freq
+            dataloader = partial(
+                dataloader_shru,
+                inv,
+                target_fs=target_fs,
+                filt_type=filt_type,
+                filt_freq=filt_freq,
+                metadata=SENSORS[sensor]["metadata"],
             )
             logging.info(f"Using inventory for {sensor.upper()}: {inv.resolve()}")
     return plotter, dataloader
-
-
-def format_times(
-    start_time: np.datetime64, end_time: np.datetime64
-) -> tuple[str, str, str, str]:
-    start_str = convert_datetime64_to_string(start_time)
-    end_str = convert_datetime64_to_string(end_time)
-    start_str_read = convert_datetime64_to_string(start_time, readable=True)
-    end_str_read = convert_datetime64_to_string(end_time, readable=True)
-    return start_str, end_str, start_str_read, end_str_read
 
 
 def main(
@@ -256,8 +350,8 @@ def main(
         title = f"{sensor.upper()} data from {start_str_read}Z to {end_str_read}Z"
 
         logging.info(f"Plotting {title}")
-        ds = dataloader(start_time, end_time)
-        fig = plotter(ds, title=title, **STFT_PARAMS)
+        data = dataloader(start_time, end_time)
+        fig = plotter(data, title=title, **STFT_PARAMS)
 
         if savefig:
             fname = f"{sensor}_{start_str}-{end_str}.png"
