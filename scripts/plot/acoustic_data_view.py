@@ -143,7 +143,7 @@ def dataloader_all_sensors(
         sensor: str, dataloader: Callable, inventory: Path
     ) -> DataStream:
         channels = SENSORS["all"]["channels_to_plot"][sensor]
-        metadata = SENSORS[sensor]["metadata"]
+        metadata = SENSORS[sensor]["metadata"].copy()
         metadata["channel_names"] = remove_channel_metadata(
             channels, metadata["channel_names"]
         )
