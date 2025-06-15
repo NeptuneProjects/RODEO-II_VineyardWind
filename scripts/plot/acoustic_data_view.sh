@@ -34,3 +34,14 @@ python ./scripts/plot/acoustic_data_view.py \
     --target-fs 250.0 \
     --filter highpass \
     --filt-freq 10.0
+
+python ./scripts/plot/acoustic_data_view.py \
+    --sensor all \
+    --start "2023-12-01T21:44:00" \
+    --end "2023-12-01T23:30:00" \
+    --multi \
+    --interval 60 \
+    --savefig \
+    --target-fs 250.0 \
+    --filter highpass \
+    --filt-freq 10.0
