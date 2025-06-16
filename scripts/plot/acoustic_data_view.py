@@ -39,8 +39,6 @@ STFT_PARAMS = {
     "nperseg": nperseg,
     "hop": int(0.05 * nperseg),
     "nfft": 2**12,
-    "fmin": 0.0,
-    "fmax": 250.0,
 }
 SENSORS = {
     "all": {
@@ -246,13 +244,13 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--target-fs",
         type=float,
-        default=1000.0,
+        default=100.0,
         help="Decimation factor for the data.",
     )
     parser.add_argument(
         "--filter",
         type=str,
-        default="highpass",
+        default="bandpass",
         choices=["lowpass", "highpass", "bandpass", None],
         help="Filter type to apply to the data.",
     )
@@ -260,8 +258,20 @@ def setup_parser() -> ArgumentParser:
         "--filt-freq",
         type=float,
         nargs="+",
-        default=[10.0],
+        default=[15.0, 35.0],
         help="Frequency or frequencies for the filter.",
+    )
+    parser.add_argument(
+        "--fmin",
+        type=float,
+        default=15.0,
+        help="Minimum frequency for the spectrogram.",
+    )
+    parser.add_argument(
+        "--fmax",
+        type=float,
+        default=35.0,
+        help="Maximum frequency for the spectrogram.",
     )
     return parser
 
@@ -324,7 +334,11 @@ def main(
     target_fs: float | None = None,
     filt_type: str | None = None,
     filt_freq: float | Sequence[float] | None = None,
+    fmin: float = 10.0,
+    fmax: float = 500.0,
 ) -> None:
+
+
 
     plotter, dataloader = setup_plotting(
         sensor,
@@ -351,11 +365,13 @@ def main(
 
         logging.info(f"Plotting {title}")
         data = dataloader(start_time, end_time)
-        fig = plotter(data, title=title, **STFT_PARAMS)
+        fig = plotter(data, title=title, **(STFT_PARAMS | {"fmin": fmin, "fmax": fmax}))
 
         if savefig:
-            fname = f"{sensor}_{start_str}-{end_str}.png"
-            file = get_path(f"{sensor}_data_view") / fname
+            savepath = (get_path(f"{sensor}_data_view") / f"{fmin}-{fmax}Hz")
+            savepath.mkdir(parents=True, exist_ok=True)
+            file = savepath / f"{sensor}_{start_str}-{end_str}.png"
+
             fig.savefig(file, **savefig_kwargs)
             plt.close(fig)
             logging.info(f"Saved figure to {file.resolve()}")
@@ -380,4 +396,6 @@ if __name__ == "__main__":
         target_fs=args.target_fs,
         filt_type=args.filter,
         filt_freq=args.filt_freq[0] if len(args.filt_freq) == 1 else args.filt_freq,
+        fmin=args.fmin,
+        fmax=args.fmax,
     )
