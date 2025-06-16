@@ -32,7 +32,8 @@ all_data_view = "./data/acoustic/data_view/all"
 3dvha_data_view = "./data/acoustic/data_view/3DVHA"
 vla1_data_view = "./data/acoustic/data_view/VLA1"
 vla2_data_view = "./data/acoustic/data_view/VLA2"
-
+# 3DVHA Motion Data
+vector_sensor_imu_processed = "data/acoustic/3dvha/vector_sensor_imu.csv"
 # Dispersion data path
 dispersion_dir = "./data/dispersion"
 # Root path for pulse metrics
@@ -59,4 +60,5 @@ max_corr_dir = "./data/max_corr"
 [computer.neptune]
 # SHRU Data Directory
 shru_data = "/Volumes/T7_Shield/RODEOII/south_fork/data/events"
-# DAS Data
+# 3DVHA Motion Data
+vector_sensor_imu_raw = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic/3DVHA/motion"
