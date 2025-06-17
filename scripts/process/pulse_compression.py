@@ -10,7 +10,9 @@ from vineyard.config import get_path
 
 
 def main():
-    channels = list(range(4, 8))
+    frequencies = [15.0, 35.0]
+    channels = list([4, 5, 7])
+
     time_start = np.datetime64("2023-12-01 22:25:00", TIME_PRECISION)
     time_end = np.datetime64("2023-12-01 22:26:00", TIME_PRECISION)
     ds = (
@@ -21,7 +23,7 @@ def main():
             channels=channels,
         )
         .decimate(20)
-        .filter(filt_type="bandpass", freq=[15.0, 35.0])
+        .filter(filt_type="bandpass", freq=frequencies)
     )
 
     excerpt_start = np.datetime64("2023-12-01 22:25:46.08", TIME_PRECISION)
@@ -36,7 +38,7 @@ def main():
             channels=7,
         )
         .decimate(20)
-        .filter(filt_type="bandpass", freq=[15.0, 35.0])
+        .filter(filt_type="bandpass", freq=frequencies)
         .trim(excerpt_start, excerpt_end)
     )
 
@@ -60,7 +62,7 @@ def main():
     channel_names = [
         "3DVHA Particle Motion X",
         "3DVHA Particle Motion Y",
-        "3DVHA Particle Motion Z",
+        # "3DVHA Particle Motion Z",
         "3DVHA Omni Hydrophone",
     ]
 
@@ -71,7 +73,7 @@ def main():
         ax = axs[i, 0]
         ax.plot(ds.time_vector, ds.data[i], label=f"Channel {i+1}")
         ax.set_xlim(ds.time_vector[0], ds.time_vector[-1])
-        if i != 3:
+        if i != 2:
             ax.set_ylim(-0.2, 0.2)
         if i == 0:
             ax.set_title(f"Original\n{channel_names[i]}", rotation=0)
@@ -86,7 +88,7 @@ def main():
         ax.plot(dspc.time_vector, dspc.data[i], label=f"Channel {i+1}")
         ax.set_xlim(dspc.time_vector[0], dspc.time_vector[-1])
         ax.set_title(channel_names[i], rotation=0)
-        if i != 3:
+        if i != 2:
             ax.set_ylim(-0.2, 0.2)
         if i == 0:
             ax.set_title(f"Pulse-compressed\n{channel_names[i]}", rotation=0)
