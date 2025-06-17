@@ -25,7 +25,42 @@ from dotenv import load_dotenv
 
 CONFIG_FILE = Path(__file__).parents[2] / "config" / "paths.toml"
 ENV_FILE = Path(__file__).parents[2] / ".env"
-
+SENSORS = {
+    "3dvha": {
+        "metadata": {
+            "channel_names": [
+                "3DVHA Front Hydrophone",
+                "3DVHA Right Hydrophone",
+                "3DVHA Left Hydrophone",
+                "3DVHA Back Hydrophone",
+                "3DVHA Particle Motion X",
+                "3DVHA Particle Motion Y",
+                "3DVHA Particle Motion Z",
+                "3DVHA Omni Hydrophone",
+            ]
+        },
+    },
+    "vla1": {
+        "metadata": {
+            "channel_names": [
+                "VLA1 Channel 1",
+                "VLA1 Channel 2",
+                "VLA1 Channel 3",
+                "VLA1 Channel 4",
+            ]
+        },
+    },
+    "vla2": {
+        "metadata": {
+            "channel_names": [
+                "VLA1 Channel 1",
+                "VLA1 Channel 2",
+                "VLA1 Channel 3",
+                "VLA1 Channel 4",
+            ]
+        },
+    },
+}
 
 def create_path(key: str, exist_ok: bool = True) -> Path:
     """Create directory for a configured path if it doesn't exist"""
