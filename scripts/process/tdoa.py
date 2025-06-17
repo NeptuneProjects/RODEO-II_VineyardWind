@@ -1,13 +1,38 @@
 #!/usr/bin/env python3
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pymap3d as pm
+from tritonoa.data.reader import read_inventory
 
+from vineyard.config import get_path
 from vineyard.tdoa import tdoa
+from vineyard.signal import resample_datastreams
 
 
 def main():
+
+    time_start = np.datetime64("2023-12-01T22:25:00")
+    time_end = np.datetime64("2023-12-01T22:26:00")
+    target_fs = 500.0
+
+    ds_3dvha = read_inventory(
+        get_path("3dvha_inventory"), time_start=time_start, time_end=time_end
+    )
+    ds_vla1 = read_inventory(
+        get_path("vla1_inventory"), time_start=time_start, time_end=time_end
+    )
+    ds_vla2 = read_inventory(
+        get_path("vla2_inventory"), time_start=time_start, time_end=time_end
+    )
+
+    data = [ds_3dvha, ds_vla1, ds_vla2]
+    data = resample_datastreams(data, target_fs)
+    ds_3dvha, ds_vla1, ds_vla2 = data
+
+    return
+
+
+def demo():
     measurements = [
         [34.888, -103.826, 0.0],
         [34.931, -103.805, 0.6],
