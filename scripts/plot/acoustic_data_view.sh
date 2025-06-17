@@ -42,6 +42,8 @@ python ./scripts/plot/acoustic_data_view.py \
     --multi \
     --interval 60 \
     --savefig \
-    --target-fs 250.0 \
-    --filter highpass \
-    --filt-freq 10.0
+    --target-fs 1000.0 \
+    --filter bandpass \
+    --filt-freq 100.0 350.0 \
+    --fmin 100.0 \
+    --fmax 350.0 \
