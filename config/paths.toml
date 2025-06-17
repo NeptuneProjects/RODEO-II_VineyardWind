@@ -32,6 +32,8 @@ all_data_view = "./data/acoustic/data_view/all"
 3dvha_data_view = "./data/acoustic/data_view/3DVHA"
 vla1_data_view = "./data/acoustic/data_view/VLA1"
 vla2_data_view = "./data/acoustic/data_view/VLA2"
+# Acoustic Data
+acoustic_data = "./data/acoustic/"
 # 3DVHA Motion Data
 vector_sensor_imu_processed = "data/acoustic/3dvha/vector_sensor_imu.csv"
 # Dispersion data path
