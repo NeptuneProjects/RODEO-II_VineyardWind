@@ -27,7 +27,7 @@ def resample_datastreams(data: list[DataStream], target_fs: float) -> list[DataS
     for ds in data:
         fs = ds.stats.sampling_rate
         p, q = resample_ratio(fs, target_fs)
-        resampled_data.append(ds.filter("highpass", target_fs / 2).resample_poly(p, q))
+        resampled_data.append(ds.filter("lowpass", target_fs / 2).resample_poly(p, q))
 
     return resampled_data
 
