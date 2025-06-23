@@ -1,9 +1,11 @@
 # Base packages
+adaptfilt
 basemap
 bathyreq
 cmasher
 cmocean
 dascore
+emd
 h5py
 ipympl
 juliacall
