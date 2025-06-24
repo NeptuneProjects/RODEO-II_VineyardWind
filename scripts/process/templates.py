@@ -22,6 +22,7 @@ def extract_template(
     target_fs: float | None = None,
     filt_type: str | None = None,
     freq: float | Sequence[float] | None = None,
+    taper: float | None = None,
 ) -> DataStream:
     time_start = np.datetime64(start, TIME_PRECISION)
     time_end = np.datetime64(end, TIME_PRECISION)
@@ -37,16 +38,27 @@ def extract_template(
         ds.resample(target_fs)
     if filt_type is not None and freq is not None:
         ds.filter(filt_type=filt_type, freq=freq)
+    if taper is not None:
+        ds.taper(taper)
     return ds
 
 
-def main(input: Path, output: Path) -> None:
+def main(
+    input: Path,
+    output: Path,
+    target_fs: float | None = None,
+    filt_type: str | None = None,
+    freq: float | Sequence[float] | None = None,
+    taper: float | None = None,
+) -> None:
     df = pl.read_csv(input)
 
     with h5py.File(output, "w") as f:
         for row in df.iter_rows():
             sensor, channel, start, end, description = row
-            ds = extract_template(sensor, channel, start, end)
+            ds = extract_template(
+                sensor, channel, start, end, target_fs, filt_type, freq, taper
+            )
 
             dataset_name = f"{sensor}_{description.replace(' ', '_').lower()}"
             g = f.create_group(dataset_name)
@@ -86,5 +98,11 @@ if __name__ == "__main__":
         default=None,
         help="Frequency or frequencies for filtering the templates.",
     )
+    parser.add_argument(
+        "--taper",
+        type=float,
+        default=None,
+        help="Taper length to apply to the templates.",
+    )
     args = parser.parse_args()
-    main(args.input, args.output, args.target_fs, args.filt_type, args.freq)
+    main(args.input, args.output, args.target_fs, args.filt_type, args.freq, args.taper)
