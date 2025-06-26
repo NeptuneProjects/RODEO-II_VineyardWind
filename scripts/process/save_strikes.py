@@ -48,7 +48,7 @@ def main(
     df = load_index(index, buffer_start, buffer_end)
 
     with h5py.File(output, "w") as file:
-        for row in tqdm(df.iter_rows()):
+        for row in tqdm(df.iter_rows(), desc="Processing strikes", total=df.shape[0]):
             sensor, channel, strike_index, _, time_start, time_end = row
             ds = read_acoustic_data(
                 get_path(f"{sensor}_inventory"),
@@ -60,7 +60,7 @@ def main(
                 filt_freq=filt_freq,
                 taper_pc=taper_pc,
             )
-            g = file.create_group(f"{sensor}/{strike_index}")
+            g = file.create_group(f"{sensor}/{strike_index:04d}")
             ds.create_hdf5_dataset(g)
 
 
