@@ -7,32 +7,11 @@ from pathlib import Path
 import logging
 
 import h5py
-import polars as pl
-from polars import DataFrame
 from tqdm import tqdm
-from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 from rodeo.utils import logging_kwargs
 from vineyard.config import get_path
-from vineyard.readers import read_acoustic_data
-
-
-def load_index(index: Path, buffer_start: float, buffer_end: float) -> DataFrame:
-    start = pl.duration(
-        microseconds=buffer_start * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
-    )
-    end = pl.duration(
-        microseconds=buffer_end * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
-    )
-    return (
-        pl.read_csv(index)
-        .with_columns(
-            pl.col("time").str.to_datetime(time_unit=TIME_PRECISION).alias("peak_time")
-        )
-        .drop("time")
-        .with_columns((pl.col("peak_time") - start).alias("start_time"))
-        .with_columns((pl.col("peak_time") + end).alias("end_time"))
-    )
+from vineyard.readers import read_acoustic_data, read_strike_index
 
 
 def main(
@@ -46,7 +25,7 @@ def main(
     filt_type: str | None = None,
     filt_freq: float | Sequence[float] | None = None,
 ) -> None:
-    df = load_index(index, buffer_start, buffer_end)
+    df = read_strike_index(index, buffer_start, buffer_end)
 
     with h5py.File(output, "w") as file:
         for row in tqdm(df.iter_rows(), desc="Processing strikes", total=df.shape[0]):

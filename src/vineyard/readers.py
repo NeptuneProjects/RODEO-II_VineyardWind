@@ -16,11 +16,12 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import polars as pl
+from polars import DataFrame
 from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
-from tritonoa.data.time import TIME_PRECISION
+from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-from vineyard.signal import convert_to_strain_rate, subtract_median
+from vineyard.signal import convert_to_strain_rate, process_datastream, subtract_median
 
 
 @dataclass(frozen=True)
@@ -116,15 +117,15 @@ def read_acoustic_data(
         channels=channels,
         metadata=metadata,
     )
-    if detrend:
-        ds.detrend(**detrend_kwargs)
-    if taper_pc is not None:
-        ds.taper(max_percentage=taper_pc)
-    if dec_factor is not None:
-        ds.decimate(dec_factor)
-    if filt_type is not None and filt_freq is not None:
-        ds.filter(filt_type, filt_freq)
-    return ds
+    return process_datastream(
+        ds,
+        detrend=detrend,
+        taper_pc=taper_pc,
+        dec_factor=dec_factor,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+        detrend_kwargs=detrend_kwargs,
+    )
 
 
 def read_bathymetry(
@@ -189,6 +190,24 @@ def read_sensor_locations(file: Path) -> pd.DataFrame:
             "Longitude [dd]": "longitude",
             "Depth [m]": "depth",
         }
+    )
+
+
+def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> DataFrame:
+    start = pl.duration(
+        microseconds=buffer_start * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
+    )
+    end = pl.duration(
+        microseconds=buffer_end * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
+    )
+    return (
+        pl.read_csv(index)
+        .with_columns(
+            pl.col("time").str.to_datetime(time_unit=TIME_PRECISION).alias("peak_time")
+        )
+        .drop("time")
+        .with_columns((pl.col("peak_time") - start).alias("start_time"))
+        .with_columns((pl.col("peak_time") + end).alias("end_time"))
     )
 
 
