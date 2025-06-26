@@ -45,6 +45,7 @@ metrics_tex_file = "./reports/hdr_report/appendix_metrics/table.tex"
 detector_config_dir = "./config/events"
 # Pile-driving strike index
 strike_index = "./data/acoustic/strike_index.csv"
+strike_data = "./data/acoustic/strike_data.hdf5"
 strike_corr = "./data/acoustic/strike_corr.hdf5"
 # Template configuration
 template_config = "./config/events/templates.csv"
