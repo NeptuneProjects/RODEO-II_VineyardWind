@@ -9,8 +9,10 @@ from pathlib import Path
 import dotenv
 import h5py
 import numpy as np
+import polars as pl
 from tqdm import tqdm
 from tritonoa.data.stream import DataStream
+from tritonoa.data.time import TIME_PRECISION
 
 from rodeo.detect import parse_detection
 from rodeo.utils import (
@@ -19,6 +21,7 @@ from rodeo.utils import (
     initialize_julia,
     logging_kwargs,
 )
+from vineyard.config import get_path
 
 dotenv.load_dotenv()
 logging.basicConfig(**logging_kwargs)
@@ -154,71 +157,63 @@ def retrieve_data(dbpath: Path, target_fs: float) -> np.ndarray:
     return data, t0, ds.stats.sampling_rate
 
 
-def main(args: argparse.Namespace) -> None:
-    jl = initialize_julia("CrossCorr")
+def main(index: Path, output: Path) -> None:
+    # jl = initialize_julia("CrossCorr")
 
-    args.output.mkdir(parents=True, exist_ok=True)
-    event_dirs = args.input.iterdir()
+    df = pl.read_csv(index).with_columns(
+        pl.col("time").str.to_datetime(time_unit=TIME_PRECISION)
+    )
 
-    for event_dir in event_dirs:
-        event_name = event_dir.name.split("_")[0]
+    for sensor, channel, strike_index, time in df.iter_rows():
+        print(sensor, channel, strike_index, time)
 
-        if args.event is not None and event_name != args.event:
-            continue
-        if args.omit is not None and event_name in args.omit:
-            continue
+#     for dbfile in dbfiles:
+#         station_name = "-".join(dbfile.stem.split("_")[1:])
+#         logging.info(f"Processing station {station_name}.")
 
-        logging.info(f"Processing event {event_name}.")
+#         data, t0, target_fs = retrieve_data(dbfile, args.target_fs)
+#         num_channels = data.shape[0]
+#         num_detections = data.shape[1]
+#         time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
+#         max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
+#         etime = np.full((num_channels, num_detections, num_detections), np.nan)
+#         logging.info(
+#             f"Data shape: {num_channels} channels; {num_detections} detections."
+#         )
+#         logging.info(
+#             f"Size of arrays: {compute_array_size([max_corr, etime, time_diff]) / (1024 ** 3):.2f} GB."
+#         )
 
-        dbfiles = event_dir.glob("*.hdf5")
+#         threads = jl.seval("Threads.nthreads()")
+#         logging.info(f"Number of Julia threads: {threads}.")
 
-        for dbfile in dbfiles:
-            station_name = "-".join(dbfile.stem.split("_")[1:])
-            logging.info(f"Processing station {station_name}.")
+#         for i in range(num_channels):
+#             jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
+#             jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
 
-            data, t0, target_fs = retrieve_data(dbfile, args.target_fs)
-            num_channels = data.shape[0]
-            num_detections = data.shape[1]
-            time_diff = np.full((num_channels, num_detections, num_detections), np.nan)
-            max_corr = np.full((num_channels, num_detections, num_detections), np.nan)
-            etime = np.full((num_channels, num_detections, num_detections), np.nan)
-            logging.info(
-                f"Data shape: {num_channels} channels; {num_detections} detections."
-            )
-            logging.info(
-                f"Size of arrays: {compute_array_size([max_corr, etime, time_diff]) / (1024 ** 3):.2f} GB."
-            )
+#             # logging.info(f"Computing dt for channel {i}.")
+#             # time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
+#             # logging.info(f"Computed dt for channel {i}.")
 
-            threads = jl.seval("Threads.nthreads()")
-            logging.info(f"Number of Julia threads: {threads}.")
+#             logging.info(f"Computing corr & etime for channel {i}.")
+#             max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)
+#             max_corr[i] = np.array(max_corr_mat)
+#             etime[i] = np.array(etime_mat)
+#             logging.info(f"Computed corr & etime for channel {i}.")
 
-            for i in range(num_channels):
-                jl_data = jl.seval("x -> Matrix{Float64}(x)")(data[i])
-                jl_time = jl.seval("x -> Vector{Float64}(x)")(t0[i])
+#         record = Record(
+#             event=event_name,
+#             station=station_name,
+#             sampling_rate=target_fs,
+#             time_diff=time_diff,
+#             corr=max_corr,
+#             etime=etime,
+#         )
 
-                # logging.info(f"Computing dt for channel {i}.")
-                # time_diff[i] = np.array(jl.CrossCorr.dt_matrix(jl_time))
-                # logging.info(f"Computed dt for channel {i}.")
-
-                logging.info(f"Computing corr & etime for channel {i}.")
-                max_corr_mat, etime_mat = jl.CrossCorr.corr_matrix(jl_data, target_fs)
-                max_corr[i] = np.array(max_corr_mat)
-                etime[i] = np.array(etime_mat)
-                logging.info(f"Computed corr & etime for channel {i}.")
-
-            record = Record(
-                event=event_name,
-                station=station_name,
-                sampling_rate=target_fs,
-                time_diff=time_diff,
-                corr=max_corr,
-                etime=etime,
-            )
-
-            record.save_h5(args.output / f"maxcorr_{event_name}.h5")
-            logging.info(
-                f"Saved results to {args.output / f'maxcorr_{event_name}.h5'}."
-            )
+#         record.save_h5(args.output / f"maxcorr_{event_name}.h5")
+#         logging.info(
+#             f"Saved results to {args.output / f'maxcorr_{event_name}.h5'}."
+#         )
 
 
 if __name__ == "__main__":
@@ -226,44 +221,30 @@ if __name__ == "__main__":
         description="Compute the coherence between two signals."
     )
     parser.add_argument(
-        "--input",
+        "--index",
         type=Path,
+        default=get_path("strike_index"),
         help="Path to the input HDF5 file containing the signals.",
-        default=Path(os.getenv("DBPATH")),
     )
-    parser.add_argument(
-        "--event",
-        type=list[str],
-        nargs="+",
-        help="Name of the event to process.",
-        default=None,
-    )
-    parser.add_argument(
-        "--omit",
-        type=str,
-        nargs="+",
-        help="Name of the event(s) to omit.",
-        default=None,
-    )
-    parser.add_argument(
-        "--target_fs",
-        type=float,
-        help="Target sampling rate for the signals.",
-        default=1000.0,
-    )
-    parser.add_argument(
-        "--max_workers",
-        type=int,
-        help="Number of workers to use for parallel processing.",
-        default=4,
-    )
+    # parser.add_argument(
+    #     "--target_fs",
+    #     type=float,
+    #     help="Target sampling rate for the signals.",
+    #     default=1000.0,
+    # )
+    # parser.add_argument(
+    #     "--max_workers",
+    #     type=int,
+    #     help="Number of workers to use for parallel processing.",
+    #     default=4,
+    # )
     parser.add_argument(
         "--output",
         type=Path,
         help="Path to the output HDF5 file to save the results.",
-        default=Path(os.getenv("MAXCORRPATH")),
+        default=get_path("strike_corr"),
     )
     args = parser.parse_args()
-    os.environ["JULIA_NUM_THREADS"] = str(args.max_workers)
-    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
-    main(args)
+    # os.environ["JULIA_NUM_THREADS"] = str(args.max_workers)
+    # os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+    main(args.index, args.output)
