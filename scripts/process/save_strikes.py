@@ -40,6 +40,7 @@ def main(
     output: Path,
     buffer_start: float,
     buffer_end: float,
+    detrend: bool = True,
     taper_pc: float | None = None,
     dec_factor: int | None = None,
     filt_type: str | None = None,
@@ -55,6 +56,7 @@ def main(
                 time_start,
                 time_end,
                 channel,
+                detrend=detrend,
                 dec_factor=dec_factor,
                 filt_type=filt_type,
                 filt_freq=filt_freq,
@@ -92,6 +94,12 @@ if __name__ == "__main__":
         help="Buffer end time in seconds after the strike time.",
     )
     parser.add_argument(
+        "--detrend",
+        action="store_true",
+        default=True,
+        help="Whether to detrend the data before processing.",
+    )
+    parser.add_argument(
         "--taper_pc",
         type=float,
         default=0.05,
@@ -122,6 +130,7 @@ if __name__ == "__main__":
         args.output,
         args.buffer_start,
         args.buffer_end,
+        args.detrend,
         args.taper_pc,
         args.dec_factor,
         args.filt_type,

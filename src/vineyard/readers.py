@@ -96,11 +96,13 @@ def read_acoustic_data(
     start: str | np.datetime64,
     end: str | np.datetime64,
     channels: int | Sequence[int] | None = None,
+    detrend: bool = True,
     taper_pc: float | None = None,
     dec_factor: int | None = None,
     filt_type: str | None = None,
     filt_freq: float | Sequence[float] | None = None,
     metadata: dict | None = None,
+    detrend_kwargs: dict = {},
 ) -> DataStream:
     if isinstance(start, str) | isinstance(start, datetime):
         start = np.datetime64(start, TIME_PRECISION)
@@ -114,6 +116,8 @@ def read_acoustic_data(
         channels=channels,
         metadata=metadata,
     )
+    if detrend:
+        ds.detrend(**detrend_kwargs)
     if taper_pc is not None:
         ds.taper(max_percentage=taper_pc)
     if dec_factor is not None:
