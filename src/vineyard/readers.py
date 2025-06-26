@@ -1,5 +1,6 @@
 """Functions to read data from various file formats used in the project."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import logging
@@ -90,6 +91,38 @@ class TDMSHeader:
         return {name: value for name, value, _ in self.properties}
 
 
+def read_acoustic_data(
+    inventory: Path,
+    start: str | np.datetime64,
+    end: str | np.datetime64,
+    channels: int | Sequence[int] | None = None,
+    taper_pc: float | None = None,
+    dec_factor: int | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    metadata: dict | None = None,
+) -> DataStream:
+    if isinstance(start, str) | isinstance(start, datetime):
+        start = np.datetime64(start, TIME_PRECISION)
+    if isinstance(end, str) | isinstance(end, datetime):
+        end = np.datetime64(end, TIME_PRECISION)
+
+    ds = read_inventory(
+        file_path=inventory,
+        time_start=start,
+        time_end=end,
+        channels=channels,
+        metadata=metadata,
+    )
+    if taper_pc is not None:
+        ds.taper(max_percentage=taper_pc)
+    if dec_factor is not None:
+        ds.decimate(dec_factor)
+    if filt_type is not None and filt_freq is not None:
+        ds.filter(filt_type, filt_freq)
+    return ds
+
+
 def read_bathymetry(
     file: Path,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
@@ -154,15 +187,6 @@ def read_sensor_locations(file: Path) -> pd.DataFrame:
         }
     )
 
-def read_shru_data(inventory: Path, start: str, end: str) -> DataStream:
-    start = np.datetime64(start, TIME_PRECISION)
-    end = np.datetime64(end, TIME_PRECISION)
-    return read_inventory(
-        file_path=inventory,
-        time_start=start,
-        time_end=end,
-    )
-
 
 def read_tdms(
     file: Path,
@@ -175,9 +199,7 @@ def read_tdms(
         """
         dist_len = patch.coord_shapes["distance"][0]
         channel_number = np.arange(dist_len)
-        return patch.update_coords(
-            channel=("distance", channel_number)
-        )
+        return patch.update_coords(channel=("distance", channel_number))
         # return patch.update_coords(
         #     channel_number=("distance", channel_number)
         # ).set_dims(distance="channel_number")
@@ -191,7 +213,6 @@ def read_tdms(
     # 2.5 Select by time
     if time:
         patch = spool.select(time=time).chunk(time=None)[0]
-
 
     logging.info(f"Original patch shape: {patch.shape}")
 
