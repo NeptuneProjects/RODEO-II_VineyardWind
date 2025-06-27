@@ -14,7 +14,7 @@ from tqdm import tqdm
 from tritonoa.data.stream import DataStream, DataStreamStats
 
 import vwdas.paths as paths
-from vineyard.plotting import savefig_kwargs
+from vineyard.plotting import SAVEFIG_KWARGS
 from vineyard.readers import read_tdms
 
 dotenv.load_dotenv()
@@ -93,7 +93,7 @@ def plot_cc_with_channels(data, label):
         plt.title(f"cc_{label}")
 
         fig.savefig(
-            paths.reports.figures / f"temp_match_{label}.png", **savefig_kwargs
+            paths.reports.figures / f"temp_match_{label}.png", **SAVEFIG_KWARGS
         )
         plt.close()
 
@@ -108,7 +108,7 @@ def plot_trace(data, label: str, fs=250.0):
     plt.title(label)
     plt.grid()
     fig.savefig(
-        paths.reports.figures / f"trace_{label}.png", **savefig_kwargs
+        paths.reports.figures / f"trace_{label}.png", **SAVEFIG_KWARGS
     )
     plt.close()
 
@@ -125,7 +125,7 @@ def plot_spectrogram(data, label: str, fs=250.0):
     colorbar.set_label("dB/Hz")
 
     fig.savefig(
-        paths.reports.figures / f"spectrogram_{label}.png", **savefig_kwargs
+        paths.reports.figures / f"spectrogram_{label}.png", **SAVEFIG_KWARGS
     )
     plt.close()
 
@@ -162,7 +162,7 @@ def main():
         ax.set_ylabel("Frequency (Hz)")
         ax.set_title(f"Channel {channel + leg_start}")
         cbar = fig.colorbar(im, ax=ax)
-        fig.savefig(paths.reports.figures / "fin_whale_search" / f"specgram_{leg_name}_{channel + leg_start}.png", **savefig_kwargs)
+        fig.savefig(paths.reports.figures / "fin_whale_search" / f"specgram_{leg_name}_{channel + leg_start}.png", **SAVEFIG_KWARGS)
         plt.close()
 
     

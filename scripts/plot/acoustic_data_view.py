@@ -29,7 +29,7 @@ from vineyard.plotting import (
     plot_3dvha_data,
     plot_all_acoustic_data,
     plot_shru_data,
-    savefig_kwargs,
+    SAVEFIG_KWARGS,
 )
 
 dotenv.load_dotenv()
@@ -372,7 +372,7 @@ def main(
             savepath.mkdir(parents=True, exist_ok=True)
             file = savepath / f"{sensor}_{start_str}-{end_str}.png"
 
-            fig.savefig(file, **savefig_kwargs)
+            fig.savefig(file, **SAVEFIG_KWARGS)
             plt.close(fig)
             logging.info(f"Saved figure to {file.resolve()}")
             continue
