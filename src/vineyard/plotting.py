@@ -1,4 +1,5 @@
 from pathlib import Path
+import string
 
 import cmasher as cmr
 import cmocean as cmo
@@ -10,10 +11,13 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from mpl_toolkits.basemap import Basemap
 import numpy as np
-import numpy.typing as npt
+from numpy.typing import NDArray
 import pandas as pd
+from scipy.interpolate import interp1d
 import scipy.signal as signal
+import scipy.stats
 from tritonoa.data.stream import DataStream
+from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 from vineyard import config
 
@@ -21,7 +25,7 @@ JASA_STYLE = Path(config.get_path("jasa_style"))
 
 plt.style.use(JASA_STYLE)
 
-savefig_kwargs = {
+SAVEFIG_KWARGS = {
     "bbox_inches": "tight",
     "dpi": 300,
     "facecolor": "white",
@@ -51,7 +55,7 @@ def draw_polygon(
     return polygon
 
 
-def find_closest_contour_index(levels: npt.NDArray[np.float64], value: float) -> int:
+def find_closest_contour_index(levels: NDArray[np.float64], value: float) -> int:
     """
     Find the index of the contour level that is closest to a given value.
 
@@ -66,9 +70,9 @@ def find_closest_contour_index(levels: npt.NDArray[np.float64], value: float) ->
 
 
 def plot_bathy(
-    data: npt.NDArray[np.float64],
-    lonvec: npt.NDArray[np.float64],
-    latvec: npt.NDArray[np.float64],
+    data: NDArray[np.float64],
+    lonvec: NDArray[np.float64],
+    latvec: NDArray[np.float64],
     m: Basemap,
     ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
@@ -134,6 +138,191 @@ def plot_bathy(
         CS_water, inline=True, fmt="%1.0f", fontsize=plt.rcParams["font.size"] - 2
     )
     return im, ax
+
+
+def plot_corr(
+    sensors: list[str],
+    corrs: list[NDArray],
+    time_diffs: list[NDArray],
+    window: float = 300.0,
+) -> Figure:
+    def _compute_pdf_vs_time(
+        data: NDArray, confidence: float = 0.95
+    ) -> tuple[NDArray, NDArray, NDArray]:
+        mean = np.nanmean(data, axis=0)
+        lower_percentile = (1 - confidence) / 2 * 100
+        upper_percentile = (1 - (1 - confidence) / 2) * 100
+
+        lower_bounds = []
+        upper_bounds = []
+        epdf = []
+        for i in range(data.shape[1]):
+            data_values = data[:, i]
+            lower_bounds.append(np.nanpercentile(data_values, lower_percentile))
+            upper_bounds.append(np.nanpercentile(data_values, upper_percentile))
+            hist, bin_edges = np.histogram(
+                data_values, bins=50, density=False, range=(0.0, 1.0)
+            )
+            if i == 0:
+                epdf_bins = (bin_edges[:-1] + bin_edges[1:]) / 2
+            epdf.append(hist / np.sum(hist))
+
+        epdf = np.array(epdf).T
+        return mean, lower_bounds, upper_bounds, epdf, epdf_bins
+
+    def _format_data(
+        corr: NDArray, time_diff: NDArray, window: float, n_resampled: int = 3000
+    ) -> None:
+        M = corr.shape[0]
+        stacked_corr = np.full((M, M), np.nan)
+        stacked_dt = np.full((M, M), np.nan)
+        for i in range(M):
+            stacked_corr[i, : M - i] = corr[i, i:]
+            stacked_dt[i, : M - i] = time_diff[i, i:] / TIME_CONVERSION_FACTOR
+
+        tvec, resampled_data = _resample_to_grid(
+            stacked_dt, stacked_corr, window, num_points=n_resampled
+        )
+        mean_corr, lower_bounds, upper_bounds, epdf, epdf_bins = _compute_pdf_vs_time(
+            resampled_data, confidence=0.95
+        )
+        Tgrid, Mgrid = np.meshgrid(tvec, np.arange(M), indexing="ij")
+        return (
+            resampled_data,
+            mean_corr,
+            lower_bounds,
+            upper_bounds,
+            epdf,
+            epdf_bins,
+            Tgrid,
+            Mgrid,
+        )
+
+    def _resample_to_grid(dt_values, corr_values, window: float, num_points: int):
+        M = corr_values.shape[0]
+        tvec = np.linspace(0.0, np.nanmax(dt_values), num_points)
+
+        resampled_data = np.full((M, num_points), np.nan)
+        for i in range(M):
+            signal = corr_values[i, :]
+            dt = dt_values[i, :]
+
+            valid_idx = ~np.isnan(signal) & ~np.isnan(dt)
+            valid_time = dt[valid_idx]
+            valid_signal = signal[valid_idx]
+
+            sort_idx = np.argsort(valid_time)
+            valid_time = valid_time[sort_idx]
+            valid_signal = valid_signal[sort_idx]
+
+            if len(valid_time) < 2:
+                continue
+
+            f = interp1d(
+                valid_time,
+                valid_signal,
+                kind="linear",
+                bounds_error=False,
+                fill_value=np.nan,
+            )
+            resampled_data[i, :] = f(tvec)
+
+        points_to_keep = np.where(tvec <= window)[0]
+        return tvec[points_to_keep], resampled_data[:, points_to_keep]
+
+    # TODO: Once manuscript is ready, update y-axis label to math notation.
+    fig, axes = plt.subplots(
+        figsize=(6.5, 3.75),
+        nrows=2,
+        ncols=3,
+        gridspec_kw={"hspace": 0.1, "wspace": 0.1},
+    )
+
+    for j, (sensor, corr, time_diff) in enumerate(zip(sensors, corrs, time_diffs)):
+        (
+            resampled_data,
+            mean_corr,
+            lower_bounds,
+            upper_bounds,
+            epdf,
+            epdf_bins,
+            Tgrid,
+            Mgrid,
+        ) = _format_data(corr, time_diff, window)
+
+        epdf_vmin = 0.01
+        epdf_vmax = 0.2
+        epdf[epdf < epdf_vmin] = np.nan
+
+        tvec = Tgrid[:, 0]
+        M = resampled_data.shape[0]
+
+        for i in range(2):
+            ax = axes[i, j]
+            if i == 0:
+                im = ax.pcolormesh(
+                    Tgrid,
+                    Mgrid,
+                    resampled_data.T,
+                    shading="nearest",
+                    cmap="cmo.thermal",
+                    vmin=0.2,
+                    vmax=1.0,
+                )
+                ax.set_xticklabels([])
+                ax.set_xlabel(None)
+                ax.set_title(sensor.upper())
+                if j == 0:
+                    ax.set_ylabel("Strike index")
+                else:
+                    ax.set_yticklabels([])
+                    ax.set_ylabel(None)
+                if j == 2:
+                    cax = fig.add_axes([0.91, 0.52, 0.02, 0.35])
+                    cbar = fig.colorbar(im, cax=cax)
+                    cbar.set_label("Correlation coefficient")
+            if i == 1:
+                # ax.plot(tvec, resampled_data.T, "k", alpha=0.01)
+                im = ax.imshow(
+                    epdf,
+                    aspect="auto",
+                    cmap="cmo.dense",
+                    origin="lower",
+                    extent=(tvec[0], tvec[-1], 0.0, 1.0),
+                    vmin=epdf_vmin,
+                    vmax=epdf_vmax,
+                )
+                # ax.plot(tvec, mean_corr, "r", label="Mean Correlation")
+                # ax.plot(tvec, upper_bounds, "r--")
+                # ax.plot(tvec, lower_bounds, "r--")
+                if j == 0:
+                    ax.set_xlabel("$\\tau = t_j - t_i$ (s)")
+                    ax.set_ylabel("Correlation coefficient")
+                else:
+                    ax.set_yticklabels([])
+                    ax.set_ylabel(None)
+                if j == 2:
+                    cax = fig.add_axes([0.91, 0.12, 0.02, 0.35])
+                    cbar = fig.colorbar(im, cax=cax)
+                    cbar.set_label("Empirical PDF")
+
+                ax.set_ylim(0.2, 1.0)
+
+            ax.set_xlim(0, window)
+    
+    for label, ax in zip(string.ascii_lowercase[0:6], axes.flat):
+        ax.text(
+            0.95,
+            0.05,
+            f"{label})",
+            transform=ax.transAxes,
+            fontsize=plt.rcParams["font.size"],
+            va="bottom",
+            ha="right",
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.95, pad=1.0),
+        )
+
+    return fig
 
 
 def plot_3dvha_data(
@@ -365,7 +554,7 @@ def plot_all_acoustic_data(
     taxs = tfig.subplots(num_rows, 1, gridspec_kw={"hspace": subplot_hspace})
     ffig = subfigs[1]
     faxs = ffig.subplots(num_rows, 1, gridspec_kw={"hspace": subplot_hspace})
-    
+
     for i in range(num_rows):
         time = time_vectors[i]
         tax = taxs[i]
@@ -402,7 +591,7 @@ def plot_all_acoustic_data(
             tax.set_xlabel("")
             fax.set_xticklabels([])
             fax.set_xlabel("")
-        
+
         cax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
         cbar = fig.colorbar(im, cax=cax)
         cbar.set_label(f"PSD (Normalized dB)")
@@ -616,9 +805,9 @@ def plot_spectrogram(f, t, Sxx, ax=None, vmin=None, vmax=None) -> Axes:
 
 
 def plot_study_area(
-    bathy_data: npt.NDArray[np.float64],
-    lonvec: npt.NDArray[np.float64],
-    latvec: npt.NDArray[np.float64],
+    bathy_data: NDArray[np.float64],
+    lonvec: NDArray[np.float64],
+    latvec: NDArray[np.float64],
     das_df: pd.DataFrame,
     equipment_df: pd.DataFrame,
     turbines_df: pd.DataFrame,
