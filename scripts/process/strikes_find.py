@@ -9,12 +9,12 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 from polars import DataFrame, concat
-from rodeo import utils
-from scipy.signal import find_peaks
-from tritonoa.data.reader import read_inventory
 from tritonoa.data.time import TIME_PRECISION
 
+from rodeo import utils
 from vineyard.config import get_path
+from vineyard.readers import read_acoustic_data
+from vineyard.signal import find_strikes
 
 SENSORS = [
     {"name": "3dvha", "channel": 7, "distance_sec": 1.0, "threshold": 0.05},
@@ -28,7 +28,7 @@ def characteristic_function(x: NDArray[np.float64]) -> NDArray[np.float64]:
     return xsq / np.max(xsq)
 
 
-def find_strikes(
+def build_strikes_df(
     sensor: dict,
     time_start: np.datetime64,
     time_end: np.datetime64,
@@ -40,21 +40,18 @@ def find_strikes(
     name, channel, distance_sec, threshold = tuple(sensor.values())
     logging.info(f"Processing sensor: {name}, channel: {channel}")
 
-    inventory = get_path(f"{name}_inventory")
-    ds = (
-        read_inventory(
-            inventory, time_start=time_start, time_end=time_end, channels=channel
-        )
-        .taper(taper_pc)
-        .decimate(dec_factor)
-        .filter(filt_type, freq)
+    ds = read_acoustic_data(
+        get_path(f"{name}_inventory"),
+        time_start,
+        time_end,
+        channels=channel,
+        taper_pc=taper_pc,
+        dec_factor=dec_factor,
+        filt_type=filt_type,
+        filt_freq=freq,
     )
+    peaks = find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_sec)
 
-    cf = characteristic_function(ds.data[0])
-
-    peaks = find_peaks(
-        cf, height=threshold, distance=int(distance_sec * ds.stats.sampling_rate)
-    )[0]
     logging.info(f"Found {len(peaks)} peaks for sensor {name}.")
     return DataFrame(
         {
@@ -72,7 +69,7 @@ def main(start: np.datetime64, end: np.datetime64, output: Path) -> None:
 
     dfs = []
     for sensor in SENSORS:
-        dfs.append(find_strikes(sensor, time_start, time_end))
+        dfs.append(build_strikes_df(sensor, time_start, time_end))
 
     concat(dfs).write_csv(output)
     logging.info(f"Strikes extracted and saved to {output}.")
