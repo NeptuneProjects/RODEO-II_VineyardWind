@@ -192,7 +192,7 @@ if __name__ == "__main__":
         "--filt_freq",
         type=float,
         nargs="+",
-        default=[15.0, 35.0],
+        default=[19.0, 25.0],
         help="Frequency range for the filter. Provide two values for bandpass filter.",
     )
     args = parser.parse_args()
