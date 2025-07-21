@@ -706,6 +706,9 @@ def plot_shru_spectrograms(
     fig, axs = plt.subplots(
         ds.num_channels, 1, figsize=figsize, gridspec_kw={"hspace": 0.3}
     )
+    if ds.num_channels == 1:
+        axs = [axs]
+        
     for i, channel in enumerate(channels):
         Sxx = STFT.spectrogram(ds.data[i])
         f = STFT.f
