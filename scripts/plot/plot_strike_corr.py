@@ -30,13 +30,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--database",
         type=Path,
-        default=get_path("strike_corr").parent / "strike_corr_15-35.hdf5",
+        default=get_path("strike_corr").parent / "strike_corr_19-25.hdf5",
         help="Path to the strike correlation data file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=get_path("figures") / "strike_corr_15-35.png",
+        default=get_path("figures") / "strike_corr_19-25.png",
         help="Path to save the output plot.",
     )
     parser.add_argument(
