@@ -1,5 +1,94 @@
 from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
+import matplotlib.pyplot as plt
+from numba import jit
 import numpy as np
+import pywt
+
+from vineyard.signal import complex_cepstrum, inverse_complex_cepstrum, real_cepstrum
+
+
+def plot_signal_cwt(
+    signal_data,
+    sampling_rate=1.0,
+    wavelet="morl",
+    scales=None,
+    title="Continuous Wavelet Transform",
+    cmap="viridis",
+    figsize=(10, 8),
+):
+    """
+    Plot a signal in Continuous Wavelet Transform (CWT) space.
+
+    Parameters:
+    -----------
+    signal_data : array_like
+        The input signal to analyze
+    sampling_rate : float, optional
+        Sampling rate of the signal in Hz (default: 1.0)
+    wavelet : str, optional
+        Wavelet to use (default: 'morl' for Morlet wavelet)
+        Options include: 'morl', 'cmor', 'gaus', 'mexh', etc.
+    scales : array_like, optional
+        Scales for the CWT (default: None, will generate appropriate scales)
+    title : str, optional
+        Title for the plot (default: 'Continuous Wavelet Transform')
+    cmap : str, optional
+        Colormap for the CWT plot (default: 'viridis')
+    figsize : tuple, optional
+        Figure size (width, height) in inches (default: (10, 8))
+
+    Returns:
+    --------
+    fig : matplotlib figure
+        The figure object containing the plots
+    """
+    # Generate appropriate scales if not provided
+    # if scales is None:
+    #     # Create logarithmically spaced scales
+    #     width = min(len(signal_data), 1024)  # Use smaller of signal length or 1024
+    #     scales = np.arange(1, width // 2)
+
+    # Compute the CWT
+    coef, frequencies = pywt.cwt(signal_data, scales, wavelet, 1.0 / sampling_rate)
+
+    # Create figure with subplots
+    fig, axs = plt.subplots(
+        2, 1, figsize=figsize, gridspec_kw={"height_ratios": [1, 3]}
+    )
+
+    # Plot the original signal
+    time = np.arange(len(signal_data)) / sampling_rate
+    axs[0].plot(time, signal_data)
+    axs[0].set_title("Original Signal")
+    axs[0].set_xlabel("Time [s]" if sampling_rate != 1.0 else "Samples")
+    axs[0].set_ylabel("Amplitude")
+
+    # Plot the CWT
+    # Convert scales to frequencies for better interpretation
+    # if wavelet == "morl":
+    #     # For Morlet, the relationship is approximately scale = central_freq/freq
+    #     central_freq = pywt.central_frequency(wavelet)
+    #     frequencies = central_freq * sampling_rate / scales
+    # else:
+    #     # For other wavelets, use a general approximation
+    #     frequencies = sampling_rate / scales
+
+    # Create the CWT plot
+    im = axs[1].imshow(
+        np.abs(coef),
+        aspect="auto",
+        cmap=cmap,
+        extent=[time[0], time[-1], frequencies[-1], frequencies[0]],
+    )
+    axs[1].set_title(title)
+    axs[1].set_xlabel("Time [s]" if sampling_rate != 1.0 else "Samples")
+    axs[1].set_ylabel("Frequency [Hz]")
+
+    # Add colorbar
+    plt.colorbar(im, ax=axs[1], orientation="vertical", label="Magnitude")
+
+    plt.tight_layout()
+    return fig
 
 
 class ModelBasedLMSFilter:
@@ -81,6 +170,7 @@ class ModelBasedLMSFilter:
         return output_signal
 
 
+@jit(nopython=True)
 def ukf_reference_denoiser(
     primary_signal,
     reference_signal,
@@ -188,4 +278,120 @@ def ukf_reference_denoiser(
                 current_gain = estimated_noise / reference_signal[i]
                 noise_gain = alpha_adapt * noise_gain + (1 - alpha_adapt) * current_gain
 
-    return denoised_signal
+    return denoised_signal, estimated_noise
+
+
+def spectral_subtraction(signal, noise, alpha=1.0, beta=0.0):
+    """
+    Perform spectral subtraction of noise from signal.
+
+    Parameters:
+    ----------
+    signal : array_like
+        The input signal (potentially noisy signal in time domain)
+    noise : array_like
+        The noise signal to be subtracted (time domain)
+    alpha : float, optional
+        Subtraction factor (default: 1.0)
+    beta : float, optional
+        Spectral floor parameter to prevent musical noise (default: 0.0)
+
+    Returns:
+    -------
+    array_like
+        The enhanced signal after spectral subtraction (time domain)
+    """
+    # Ensure both signals have the same length
+    min_length = min(len(signal), len(noise))
+    signal = signal[:min_length]
+    noise = noise[:min_length]
+
+    # Convert to frequency domain
+    signal_fft = np.fft.fft(signal)
+    noise_fft = np.fft.fft(noise)
+
+    # Compute magnitude and phase spectra
+    signal_mag = np.abs(signal_fft)
+    noise_mag = np.abs(noise_fft)
+    signal_phase = np.angle(signal_fft)
+
+    # Perform spectral subtraction
+    subtracted_mag = signal_mag - alpha * noise_mag
+
+    # Apply spectral floor to avoid negative values and reduce musical noise
+    subtracted_mag = np.maximum(subtracted_mag, beta * signal_mag)
+
+    # Recombine magnitude with original phase
+    enhanced_fft = subtracted_mag * np.exp(1j * signal_phase)
+
+    # Convert back to time domain
+    enhanced_signal = np.real(np.fft.ifft(enhanced_fft))
+
+    return enhanced_signal
+
+
+def cepstral_subtraction(signal, noise_model, nfft):
+    ccep_sig, _ = complex_cepstrum(signal, nfft)
+    # rcep = real_cepstrum(signal, nfft)
+    ccep_noise, _ = complex_cepstrum(noise_model, nfft)
+    ccep = ccep_sig - ccep_noise
+    icep = inverse_complex_cepstrum(ccep, nfft / 2)
+    return icep
+
+
+# def cepstral_subtraction(signal, noise_model, alpha=1.0, beta=0.01):
+#     """
+#     Perform cepstral subtraction of a noise model from a signal.
+
+#     Parameters:
+#     ----------
+#     signal : array_like
+#         The input noisy signal (time domain)
+#     noise_model : array_like
+#         The noise model to subtract (time domain)
+#     alpha : float, optional
+#         Subtraction factor (default: 1.0)
+#     beta : float, optional
+#         Floor parameter to prevent excessive suppression (default: 0.01)
+
+#     Returns:
+#     -------
+#     array_like
+#         The enhanced signal after cepstral subtraction (time domain)
+#     """
+#     # Ensure both signals have the same length
+#     min_length = min(len(signal), len(noise_model))
+#     signal = signal[:min_length]
+#     noise_model = noise_model[:min_length]
+
+#     # Step 1: Compute FFT of both signals
+#     signal_fft = np.fft.fft(signal)
+#     noise_fft = np.fft.fft(noise_model)
+
+#     # Step 2: Calculate log magnitude spectra
+#     signal_log_mag = np.log(np.abs(signal_fft) + 1e-10)
+#     noise_log_mag = np.log(np.abs(noise_fft) + 1e-10)
+
+#     # Step 3: Convert to cepstral domain
+#     signal_cepstrum = np.real(np.fft.ifft(signal_log_mag))
+#     noise_cepstrum = np.real(np.fft.ifft(noise_log_mag))
+
+#     # Step 4: Perform cepstral subtraction
+#     enhanced_cepstrum = signal_cepstrum - alpha * noise_cepstrum
+
+#     # Step 5: Convert back to log spectral domain
+#     enhanced_log_mag = np.real(np.fft.fft(enhanced_cepstrum))
+
+#     # Step 6: Apply spectral floor to avoid excessive suppression
+#     signal_mag = np.abs(signal_fft)
+#     enhanced_mag = np.exp(enhanced_log_mag)
+#     enhanced_mag = np.maximum(enhanced_mag, beta * signal_mag)
+
+#     # Step 7: Reconstruct with original phase
+#     signal_phase = np.angle(signal_fft)
+#     enhanced_fft = enhanced_mag * np.exp(1j * signal_phase)
+
+#     # Step 8: Convert back to time domain
+#     enhanced_signal = np.real(np.fft.ifft(enhanced_fft))
+
+#     return enhanced_signal
