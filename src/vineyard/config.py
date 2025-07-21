@@ -21,6 +21,7 @@ Command-line usage:
 import os
 from pathlib import Path
 import tomllib
+
 from dotenv import load_dotenv
 
 CONFIG_FILE = Path(__file__).parents[2] / "config" / "paths.toml"
@@ -61,6 +62,7 @@ SENSORS = {
         },
     },
 }
+
 
 def create_path(key: str, exist_ok: bool = True) -> Path:
     """Create directory for a configured path if it doesn't exist"""
