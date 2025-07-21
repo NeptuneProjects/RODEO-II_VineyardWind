@@ -1,9 +1,11 @@
 """Module for common signal processing functions used in the project."""
 
 from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.signal import find_peaks
 from tritonoa.data.stream import DataStream
 from tritonoa.signal.util import resample_ratio
 
@@ -257,3 +259,29 @@ def resample_datastreams(data: list[DataStream], target_fs: float) -> list[DataS
 def subtract_median(data: NDArray[np.float64]) -> NDArray[np.float64]:
     """Subtract the median from each row of the data array."""
     return data - np.median(data, axis=1, keepdims=True)
+
+
+def find_strikes(
+    data: NDArray[np.float64],
+    sampling_rate: float,
+    threshold: float,
+    distance_sec: float,
+) -> NDArray[np.int32]:
+    def _characteristic_function(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        xsq = x**2
+        return xsq / np.max(xsq)
+
+    cf = _characteristic_function(data)
+    peaks = find_peaks(
+        cf, height=threshold, distance=int(distance_sec * sampling_rate)
+    )[0]
+    return peaks
+
+
+def roll_and_pad(data: NDArray, shift: int, fill: Any = 0.0, axis: int = -1) -> NDArray:
+    shifted_data = np.roll(data, shift, axis=axis)
+    if shift > 0:
+        shifted_data[:shift] = fill
+    elif shift < 0:
+        shifted_data[shift:] = fill
+    return shifted_data
