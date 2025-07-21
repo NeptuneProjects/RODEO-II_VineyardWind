@@ -18,6 +18,7 @@ polars
 pymap3d
 pyproj
 python-dotenv
+PyWavelets
 scipy
 seaborn
 tqdm
