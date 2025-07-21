@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from numpy.typing import NDArray
 from polars import DataFrame, concat
 from tritonoa.data.time import TIME_PRECISION
 
@@ -21,11 +20,6 @@ SENSORS = [
     {"name": "vla1", "channel": 3, "distance_sec": 1.0, "threshold": 0.05},
     {"name": "vla2", "channel": 0, "distance_sec": 1.0, "threshold": 0.02},
 ]
-
-
-def characteristic_function(x: NDArray[np.float64]) -> NDArray[np.float64]:
-    xsq = x**2
-    return xsq / np.max(xsq)
 
 
 def build_strikes_df(
