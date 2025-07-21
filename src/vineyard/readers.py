@@ -194,6 +194,15 @@ def read_sensor_locations(file: Path) -> pd.DataFrame:
 
 
 def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> DataFrame:
+    """Read the strike index from a CSV file and apply time buffers.
+    
+    Args:
+        index (Path): Path to the CSV file containing the strike index.
+        buffer_start (float): Buffer time in seconds to subtract from the peak time.
+        buffer_end (float): Buffer time in seconds to add to the peak time.
+    Returns:
+        DataFrame: Polars DataFrame with adjusted start and end times.
+    """
     start = pl.duration(
         microseconds=buffer_start * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
     )
