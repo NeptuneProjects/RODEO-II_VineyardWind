@@ -30,13 +30,13 @@ SENSORS = [
         "threshold": 0.05,
         "ylim": [-1.0e7, 1.0e7],
     },
-    {
-        "name": "vla2",
-        "channel": 0,
-        "distance_sec": 1.0,
-        "threshold": 0.02,
-        "ylim": [-5.0e6, 5.0e6],
-    },
+    # {
+    #     "name": "vla2",
+    #     "channel": 0,
+    #     "distance_sec": 1.0,
+    #     "threshold": 0.02,
+    #     "ylim": [-5.0e6, 5.0e6],
+    # },
 ]
 SMOKE_TEST = False
 
@@ -124,7 +124,7 @@ def process_datastream(ds, strike_index, corrs, name: str) -> None:
                 f"Strike {i} has no templates. Using reference trace as template."
             )
             template_inds = [i]
-            traces = [reference_trace]
+            traces = np.atleast_2d(reference_trace)
             template = reference_trace
         # Case 2: No templates found, but previous template exists
         # Action: Use the previous template
