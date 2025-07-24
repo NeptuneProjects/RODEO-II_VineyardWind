@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 import string
 
@@ -309,7 +310,7 @@ def plot_corr(
                 ax.set_ylim(0.2, 1.0)
 
             ax.set_xlim(0, window)
-    
+
     for label, ax in zip(string.ascii_lowercase[0:6], axes.flat):
         ax.text(
             0.95,
@@ -601,6 +602,60 @@ def plot_all_acoustic_data(
     return fig
 
 
+def plot_template(
+    traces: NDArray,
+    template: NDArray,
+    title: str = None,
+    ylim: Sequence[float] | None = None,
+    figsize: tuple[float] = (6, 3),
+) -> Figure:
+    fig = plt.figure(figsize=figsize)
+    ax = plt.gca()
+    ax.plot(traces[:, 0], "b", label="Reference", zorder=15)
+    ax.plot(traces, "k", zorder=10)
+    ax.plot(template, "r", label="Template", zorder=20)
+    ax.set_xlim(0, traces.shape[0])
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    ax.legend(loc="upper left")
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("Amplitude")
+    ax.set_title(title)
+    return fig
+
+
+def plot_template_detail(
+    reference: NDArray,
+    template: NDArray,
+    xcorr: NDArray,
+    lags: NDArray,
+    title: str | None = None,
+) -> Figure:
+
+    peak_lag = lags[np.argmax(xcorr)]
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 6))
+    ax = axes[0]
+    ax.plot(reference, "k", label="Reference")
+    ax.plot(template, "b", label="Aligned Template")
+    ax.set_title(title)
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("Amplitude")
+    ax.legend()
+
+    ax = axes[1]
+    ax.plot(lags, xcorr, label="Cross-correlation")
+    ax.axvline(peak_lag, color="r", linestyle="--", label="Peak Lag")
+    ax.grid()
+    ax.set_title("Cross-correlation of Aligned Template and Reference")
+    ax.set_xlabel("Lag (samples)")
+    ax.set_ylabel("Cross-correlation")
+    ax.legend()
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_shru_data(
     ds: DataStream,
     nperseg: int = 64,
@@ -708,7 +763,7 @@ def plot_shru_spectrograms(
     )
     if ds.num_channels == 1:
         axs = [axs]
-        
+
     for i, channel in enumerate(channels):
         Sxx = STFT.spectrogram(ds.data[i])
         f = STFT.f
