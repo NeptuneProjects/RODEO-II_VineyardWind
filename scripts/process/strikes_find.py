@@ -27,7 +27,7 @@ def build_strikes_df(
     time_start: np.datetime64,
     time_end: np.datetime64,
     taper_pc: float = 1e-4,
-    dec_factor: int = 20,
+    dec_factor: int | None = None,
     filt_type: str = "bandpass",
     freq: float | Sequence[float] = [100.0, 300.0],
 ) -> DataFrame:
@@ -63,7 +63,9 @@ def main(start: np.datetime64, end: np.datetime64, output: Path) -> None:
 
     dfs = []
     for sensor in SENSORS:
-        dfs.append(build_strikes_df(sensor, time_start, time_end))
+        raw_df = build_strikes_df(sensor, time_start, time_end)
+        # refined_df = refine_strikes_df(raw_df)
+        dfs.append(raw_df)
 
     concat(dfs).write_csv(output)
     logging.info(f"Strikes extracted and saved to {output}.")
