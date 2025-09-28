@@ -114,7 +114,7 @@ def plot_bathy(
         latlon=True,
         ax=ax,
     )
-    idx = find_closest_contour_index(levelsc, shallowest_contour_depth)
+    idx = np.argmin(np.abs(levelsc - shallowest_contour_depth))
     CS_water = m.contour(
         lonlon,
         latlat,
