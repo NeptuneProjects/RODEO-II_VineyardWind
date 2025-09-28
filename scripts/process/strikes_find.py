@@ -53,6 +53,7 @@ def build_strikes_df(
             "channel": channel,
             "strike_index": np.arange(len(peaks)),
             "time": ds.time_vector[peaks],
+            "sample": peaks,
         }
     )
 
