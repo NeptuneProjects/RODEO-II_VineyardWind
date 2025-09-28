@@ -30,13 +30,13 @@ SENSORS = [
         "threshold": 0.05,
         "ylim": [-1.0e7, 1.0e7],
     },
-    # {
-    #     "name": "vla2",
-    #     "channel": 0,
-    #     "distance_sec": 1.0,
-    #     "threshold": 0.02,
-    #     "ylim": [-5.0e6, 5.0e6],
-    # },
+    {
+        "name": "vla2",
+        "channel": 0,
+        "distance_sec": 1.0,
+        "threshold": 0.02,
+        "ylim": [-5.0e6, 5.0e6],
+    },
 ]
 SMOKE_TEST = False
 
@@ -51,7 +51,12 @@ def enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
 
 
 def load_data(
-    sensor: str, channel: int, time_start: np.datetime64, time_end: np.datetime64
+    sensor: str,
+    channel: int,
+    time_start: np.datetime64,
+    time_end: np.datetime64,
+    start_buffer: float,
+    end_buffer: float,
 ):
     ds = read_acoustic_data(
         get_path(f"{sensor}_inventory"),
@@ -62,9 +67,9 @@ def load_data(
         filt_type="bandpass",
         filt_freq=[19.0, 25.0],
     )
-    # ds = None
+
     strike_index = (
-        read_strike_index(get_path("strike_index"), 0.75, 0.85)
+        read_strike_index(get_path("strike_index"), start_buffer, end_buffer)
         .filter(pl.col("sensor") == sensor)
         .drop(["sensor", "channel"])
     )
@@ -91,13 +96,33 @@ def get_template_inds(
     return inds
 
 
-def process_datastream(ds, strike_index, corrs, name: str) -> None:
+def get_window_inds(
+    sampling_rate: float, peak_index: int, start_buffer: float, end_buffer: float
+) -> tuple[int, int]:
+    start_index = peak_index - int(start_buffer * sampling_rate)
+    end_index = peak_index + int(end_buffer * sampling_rate)
+    return start_index, end_index
+
+
+def process_datastream(
+    ds,
+    strike_index,
+    corrs,
+    name: str,
+    start_buffer: float,
+    end_buffer: float,
+    save_plots: bool = False,
+) -> None:
     corr_cutoff = 0.9
     all_template_inds = get_template_inds(
         strike_index.shape[0], corrs, threshold=corr_cutoff, window_size=5
     )
 
+    template_data = []
+    start_inds = []
+    end_inds = []
     template = None
+    previous_template_inds = []
 
     for i in tqdm(
         range(len(strike_index)),
@@ -105,14 +130,18 @@ def process_datastream(ds, strike_index, corrs, name: str) -> None:
         total=len(strike_index),
         unit="strike",
     ):
-        reference_trace = (
-            ds.copy()
-            .trim(
-                starttime=np.datetime64(strike_index.item(i, "start_time")),
-                endtime=np.datetime64(strike_index.item(i, "end_time")),
-            )
-            .data[0]
+        ref_start = np.datetime64(strike_index.item(i, "start_time"))
+        ref_end = np.datetime64(strike_index.item(i, "end_time"))
+        reference_trace = ds.copy().trim(starttime=ref_start, endtime=ref_end).data[0]
+
+        start_index, end_index = get_window_inds(
+            ds.stats.sampling_rate,
+            strike_index.item(i, "sample"),
+            start_buffer,
+            end_buffer,
         )
+        start_inds.append(start_index)
+        end_inds.append(end_index)
 
         template_inds = all_template_inds[i]
         template_inds.remove(i)
@@ -126,6 +155,7 @@ def process_datastream(ds, strike_index, corrs, name: str) -> None:
             template_inds = [i]
             traces = np.atleast_2d(reference_trace)
             template = reference_trace
+
         # Case 2: No templates found, but previous template exists
         # Action: Use the previous template
         elif len(template_inds) < 1:
@@ -187,36 +217,62 @@ def process_datastream(ds, strike_index, corrs, name: str) -> None:
             template = np.mean(traces, axis=1)
             previous_template_inds = template_inds.copy()
 
-        print_corrs = ", ".join(
-            [f"{x:.2f}" for x in np.atleast_1d(corrs[i, template_inds]).tolist()]
-        )
-        title = (
-            f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
-            f"Template Indices: {template_inds}\nMax Corr: [{print_corrs}]"
-        )
-        ylim = [sensor["ylim"] for sensor in SENSORS if sensor["name"] == name][0]
-        fig = plot_template(traces, template, title=title, ylim=ylim)
-        fig.savefig(
-            get_path("figures")
-            / "strike_templates"
-            / f"{name}_strike_{i:04d}_template.png",
-            dpi=200,
-            bbox_inches="tight",
-        )
-        plt.close(fig)
+        template_data.append(template)
 
-        # if i == 20:
-        #     return
+        if save_plots:
+            print_corrs = ", ".join(
+                [f"{x:.2f}" for x in np.atleast_1d(corrs[i, template_inds]).tolist()]
+            )
+            title = (
+                f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
+                f"Template Indices: {template_inds}\nMax Corr: [{print_corrs}]"
+            )
+            ylim = [sensor["ylim"] for sensor in SENSORS if sensor["name"] == name][0]
+            savepath = get_path("figures") / "strike_templates" / name
+            savepath.mkdir(parents=True, exist_ok=True)
+            fig = plot_template(traces, template, title=title, ylim=ylim)
+            fig.savefig(
+                savepath / f"{name}_strike_{i:04d}_template.png",
+                dpi=200,
+                bbox_inches="tight",
+            )
+            plt.close(fig)
+
+    template_db = np.array(enforce_same_size(template_data))
+    with h5py.File(get_path("template_data"), "a") as f:
+        if name in f:
+            logging.warning(
+                f"Group {name} already exists in template_data. Overwriting."
+            )
+            del f[name]
+        g = f.create_group(name)
+        g.attrs["sampling_rate"] = ds.stats.sampling_rate
+        g.create_dataset("start_sample", data=start_inds)
+        g.create_dataset("end_sample", data=end_inds)
+        g.create_dataset("data", data=template_db)
+        logging.info(
+            f"Templates for {name.upper()} saved to {get_path("template_data")}"
+        )
 
 
-def main(time_start: np.datetime64, time_end: np.datetime64) -> None:
+def main(
+    time_start: np.datetime64,
+    time_end: np.datetime64,
+    start_buffer: float,
+    end_buffer: float,
+    save_plots: bool,
+) -> None:
     for sensor in SENSORS:
         name = sensor["name"]
         channel = sensor["channel"]
         logging.info(f"Processing sensor: {name} channel {channel}.")
 
-        ds, strike_index, corrs = load_data(name, channel, time_start, time_end)
-        process_datastream(ds, strike_index, corrs, name)
+        ds, strike_index, corrs = load_data(
+            name, channel, time_start, time_end, start_buffer, end_buffer
+        )
+        process_datastream(
+            ds, strike_index, corrs, name, start_buffer, end_buffer, save_plots
+        )
 
 
 if __name__ == "__main__":
@@ -234,7 +290,19 @@ if __name__ == "__main__":
         default="2023-12-01T22:26:00.00",
         help="End time in ISO format (default: 2023-12-01T22:26:00.00)",
     )
+    parser.add_argument(
+        "--start-buffer", type=float, default=0.75, help="Buffer before peak (s)."
+    )
+    parser.add_argument(
+        "--end-buffer", type=float, default=0.85, help="Buffer after peak (s)."
+    )
+    parser.add_argument(
+        "--save-plots",
+        action="store_true",
+        default=False,
+        help="Save a plot of each template.",
+    )
     args = parser.parse_args()
     time_start = np.datetime64(args.start, TIME_PRECISION)
     time_end = np.datetime64(args.end, TIME_PRECISION)
-    main(time_start, time_end)
+    main(time_start, time_end, args.start_buffer, args.end_buffer, args.save_plots)
