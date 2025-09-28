@@ -2,6 +2,7 @@ from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
 import matplotlib.pyplot as plt
 from numba import jit
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 import pywt
 
 from vineyard.signal import complex_cepstrum, inverse_complex_cepstrum, real_cepstrum
@@ -170,18 +171,18 @@ class ModelBasedLMSFilter:
         return output_signal
 
 
-@jit(nopython=True)
+# @jit(nopython=True)
 def ukf_reference_denoiser(
-    primary_signal,
-    reference_signal,
-    process_noise=0.01,
-    measurement_noise=0.1,
-    dt=1.0,
-    alpha=0.1,
-    beta=2.0,
-    kappa=0,
-    state_dim=4,
-    measurement_dim=2,
+    primary_signal: NDArray[np.float64],
+    reference_signal: NDArray[np.float64],
+    process_noise: float = 0.01,
+    measurement_noise: float = 0.1,
+    dt: float = 1.0,
+    alpha: float = 0.001,
+    beta: float = 2.0,
+    kappa: float = 0.0,
+    state_dim: int = 4,
+    measurement_dim: int = 2,
 ):
     """
     Apply Unscented Kalman Filter to denoise a signal using a reference signal.
