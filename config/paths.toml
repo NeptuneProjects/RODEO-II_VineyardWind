@@ -34,6 +34,7 @@ vla1_data_view = "./data/acoustic/data_view/VLA1"
 vla2_data_view = "./data/acoustic/data_view/VLA2"
 # Acoustic Data
 acoustic_data = "./data/acoustic/"
+denoised_data = "./data/acoustic/denoised"
 # 3DVHA Motion Data
 vector_sensor_imu_processed = "data/acoustic/3dvha/vector_sensor_imu.csv"
 # Dispersion data path
@@ -50,7 +51,7 @@ strike_corr = "./data/acoustic/strike_corr_19-25.hdf5"
 synth_strikes = "./data/acoustic/"
 # Template configuration
 template_config = "./config/events/templates.csv"
-template_data = "./data/acoustic/templates.hdf5"
+template_data = "./data/acoustic/templates.h5"
 # Event Index
 event_config = "./config/events/events.csv"
 # Meteorological data
