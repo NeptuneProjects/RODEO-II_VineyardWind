@@ -17,20 +17,20 @@ from vineyard.config import get_path
 from vineyard.readers import read_acoustic_data, read_strike_index
 
 SENSORS = [
-    {
-        "name": "3dvha",
-        "channel": 7,
-        "distance_sec": 1.0,
-        "threshold": 0.05,
-        "ylim": [-0.015, 0.015],
-    },
-    {
-        "name": "vla1",
-        "channel": 3,
-        "distance_sec": 1.0,
-        "threshold": 0.05,
-        "ylim": [-1.0e7, 1.0e7],
-    },
+    # {
+    #     "name": "3dvha",
+    #     "channel": 7,
+    #     "distance_sec": 1.0,
+    #     "threshold": 0.05,
+    #     "ylim": [-0.015, 0.015],
+    # },
+    # {
+    #     "name": "vla1",
+    #     "channel": 3,
+    #     "distance_sec": 1.0,
+    #     "threshold": 0.05,
+    #     "ylim": [-1.0e7, 1.0e7],
+    # },
     {
         "name": "vla2",
         "channel": 0,
