@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import matplotlib.pyplot as plt
-import numpy as np
 from tritonoa.data.reader import read_hdf5
 from tritonoa.data.stream import DataStream
 
@@ -72,13 +71,13 @@ def main():
         ds = read_hdf5(get_path("denoised_data") / f"{sensor}.h5")
         ds_pc = read_hdf5(get_path("pulse_comp_data") / f"{sensor}_pc.h5")
 
-        # fig = plot_denoised_data(ds, sensor)
-        # fig.savefig(savepath / f"{sensor}_denoised.png", **SAVEFIG_KWARGS)
-        # plt.close(fig)
+        fig = plot_denoised_data(ds, sensor)
+        fig.savefig(savepath / f"{sensor}_denoised.png", **SAVEFIG_KWARGS)
+        plt.close(fig)
 
-        # fig = plot_pulse_compressed_data(ds, ds_pc, sensor)
-        # fig.savefig(savepath / f"{sensor}_denoised_pc.png", **SAVEFIG_KWARGS)
-        # plt.close(fig)
+        fig = plot_pulse_compressed_data(ds, ds_pc, sensor)
+        fig.savefig(savepath / f"{sensor}_denoised_pc.png", **SAVEFIG_KWARGS)
+        plt.close(fig)
 
         streams[sensor] = ds
         streams_pc[sensor] = ds_pc
