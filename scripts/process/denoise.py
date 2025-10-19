@@ -17,43 +17,36 @@ from vineyard.config import get_path
 from vineyard.readers import read_acoustic_data, read_strike_index
 
 SENSORS = [
-    # {
-    #     "name": "3dvha",
-    #     "channel": 7,
-    #     "distance_sec": 1.0,
-    #     "threshold": 0.05,
-    #     "ylim": [-0.015, 0.015],
-    # },
-    # {
-    #     "name": "vla1",
-    #     "channel": 3,
-    #     "distance_sec": 1.0,
-    #     "threshold": 0.05,
-    #     "ylim": [-1.0e7, 1.0e7],
-    # },
+    {
+        "name": "3dvha",
+        "channel": 7,
+    },
+    {
+        "name": "vla1",
+        "channel": 3,
+    },
     {
         "name": "vla2",
         "channel": 0,
-        "distance_sec": 1.0,
-        "threshold": 0.02,
-        "ylim": [-5.0e6, 5.0e6],
     },
 ]
 
 
-def adaptive_filter(signal: ArrayLike, template: ArrayLike):
-    scale = 1.0 / np.max(np.abs(signal))
-    scaled_signal = scale * signal
-    tap = taper(len(signal), max_percentage=0.01)
-    scaled_template = scale * template * tap
+def adaptive_filter(
+    signal: ArrayLike, template: ArrayLike
+) -> tuple[np.ndarray, np.ndarray]:
+    tap = taper(len(signal), max_percentage=0.02)
+    y = tap * template
+    signal_fft = np.fft.fft(signal)
+    y_fft = np.fft.fft(y)
+    e_fft = signal_fft - y_fft
+    e = np.fft.ifft(e_fft).real
+    return e, y
 
-    e = scaled_signal - scaled_template
-    y = scaled_template
 
-    return e / scale, y / scale
-
-
-def denoise_data(signal, fs, strike_index, templates, start_samples, end_samples):
+def denoise_data(
+    signal: ArrayLike, strike_index, templates, start_samples, end_samples
+) -> tuple[np.ndarray, np.ndarray]:
     filtered_signal = signal.copy()
     y_full = np.zeros_like(signal)
 
@@ -99,7 +92,6 @@ def load_data(sensor: str, channel: int, start: np.datetime64, end: np.datetime6
 
     with h5py.File(get_path("template_data"), "r") as f:
         g = f.get(sensor)
-        print(g)
         template_fs = g.attrs["sampling_rate"]
         templates = g["data"][:]
         start_samples = g["start_sample"][:]
@@ -121,7 +113,6 @@ def main(start: np.datetime64, end: np.datetime64) -> None:
         )
         x_filtered, y = denoise_data(
             ds.data[0],
-            ds.stats.sampling_rate,
             strike_index,
             templates,
             start_samples,
