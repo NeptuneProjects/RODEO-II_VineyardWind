@@ -12,6 +12,7 @@ figures = "./reports/figures"
 jasa_style = "./config/jasa_fig_style.mplstyle"
 # Equipment
 equipment_config = "./config/experiment/equipment.csv"
+distance_lut = "./config/experiment/distances.csv"
 # Acoustic Arrays
 3dvha = "./config/experiment/3dvha.csv"
 vla1_config = "./config/experiment/vla1.csv"
