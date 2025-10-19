@@ -15,8 +15,10 @@ def main(denoised_data_path: Path, whale_templates_path: Path, output_path: Path
 
     with h5py.File(whale_templates_path, "r") as f_whale:
         for sensor in sensors:
+            # chan = 0 if sensor == "vla2" else 1
+            chan = 1
             ds = read_hdf5(denoised_data_path / f"{sensor}.h5")
-            ds.data = ds.data[1] / np.max(np.abs(ds.data[1]))
+            ds.data = ds.data[chan] / np.max(np.abs(ds.data[chan]))
 
             template = read_hdf5_group(f_whale[f"{sensor}_fin_whale"])
             ds_pc = ds.copy().pulse_compression(template.data.squeeze())
