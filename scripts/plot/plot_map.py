@@ -5,14 +5,23 @@ from collections.abc import Sequence
 import logging
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from mpl_toolkits.basemap import Basemap
+import numpy as np
 import polars as pl
 from polars import DataFrame
 
 from vineyard.config import get_path
 import vineyard.plotting as plotting
 import vineyard.readers as readers
+
+BBOX_INSET = [[-70.65, -70.249], [40.9, 41.201]]
+BBOX_OUTER = [[-71.0, -68.999], [39.5, 41.601]]
 
 map_kwargs = {
     "bounds": {
@@ -39,78 +48,150 @@ map_kwargs = {
 
 
 def create_map(
-    maps: list[str],
     bathy: dict,
     lonvec: Sequence[float],
     latvec: Sequence[float],
-    das_locations: DataFrame,
     equip_locations: DataFrame,
     turbine_locations: DataFrame,
     active_turbine: dict,
-    bboxes: dict[str, tuple[float, float, float, float]],
-    sound_trap: dict | None = None,
+    bbox_inset: list[list[float, float]],
+    bbox_outer: list[list[float, float]],
+    bearings: Sequence[float],
+    times: Sequence[np.datetime64],
 ) -> Figure:
-    fig = plt.figure(figsize=(8, 4.5))
-    ax = fig.add_subplot(1, 1, 1)
+    fig, axes = plt.subplots(
+        nrows=1,
+        ncols=2,
+        figsize=(7, 4),
+        gridspec_kw={"wspace": 0.05},
+        constrained_layout=True,
+    )
 
-    ax = plotting.plot_study_area(
+    ax = axes[0]
+    ax, _ = plotting.plot_study_area(
         bathy,
         lonvec,
         latvec,
-        das_locations,
-        equip_locations,
-        turbine_locations,
+        equipment_df=equip_locations,
+        turbines_df=turbine_locations,
         active_turbine=active_turbine,
-        # sound_trap=None if map_type == "bounds" else sound_trap,
-        bounds=bboxes[map_type],
+        bounds=bbox_inset,
         ax=ax,
-        inset=bboxes["inset"] if map_type == "bounds" else None,
-        **map_kwargs[map_type],
+        scale_bar=10,
+        levelsf=np.arange(-100, 10, 5),
+        levelsc=np.arange(-100, 1, 5),
     )
 
+    ax = axes[1]
+    ax, m = plotting.plot_study_area(
+        bathy,
+        lonvec,
+        latvec,
+        equipment_df=equip_locations,
+        active_turbine=active_turbine,
+        bounds=bbox_outer,
+        ax=ax,
+        scale_bar=50,
+        meridians=0.5,
+        parallels=0.5,
+        parallel_labels=[0, 1, 0, 0],
+        shallowest_contour_depth=-1.0,
+        levelsf=np.arange(-2500, 100, 50),
+        levelsc=np.arange(-2500, 40, 50),
+        show_legend=False,
+    )
 
+    xy = m(bbox_inset[0][0], bbox_inset[1][0])
+    xwidth = m(bbox_inset[0][1], bbox_inset[1][0])[0] - xy[0]
+    yheight = m(bbox_inset[0][0], bbox_inset[1][1])[1] - xy[1]
 
-    # for map_type, ax in zip(maps, axs):
-    #     ax = plotting.plot_study_area(
-    #         bathy,
-    #         lonvec,
-    #         latvec,
-    #         das_locations,
-    #         equip_locations,
-    #         turbine_locations,
-    #         active_turbine=active_turbine,
-    #         sound_trap=None if map_type == "bounds" else sound_trap,
-    #         bounds=bboxes[map_type],
-    #         ax=ax,
-    #         inset=bboxes["inset"] if map_type == "bounds" else None,
-    #         **map_kwargs[map_type],
-    #     )
-    #     logging.info(f"Map `{map_type}` plotted.")
+    box = Rectangle(
+        xy,
+        xwidth,
+        yheight,
+        linewidth=1,
+        edgecolor="red",
+        facecolor="none",
+    )
+    ax.add_patch(box)
+
+    colors = plt.cm.RdPu(np.linspace(0.25, 1, len(bearings)))
+    for brg, color in zip(bearings, colors):
+        x_start, y_start = m(
+            equip_locations.filter(pl.col("equipment") == "VLA1")["longitude"],
+            equip_locations.filter(pl.col("equipment") == "VLA1")["latitude"],
+        )
+        # Convert bearing to mathematical angle (bearing: 0=N, 90=E; math: 0=E, 90=N)
+        math_angle = 90.0 - brg
+        x_end = x_start + 200e3 * np.cos(np.deg2rad(math_angle))
+        y_end = y_start + 200e3 * np.sin(np.deg2rad(math_angle))
+        ax.plot(
+            [x_start, x_end],
+            [y_start, y_end],
+            color=color,
+            linestyle="-",
+            linewidth=1,
+        )
+
+    # Add inset map showing New England context
+    ax_inset = inset_axes(ax, width="25%", height="25%", loc="upper right", borderpad=0.5)
+    ne_bounds = [[-77.5, -62.5], [32.5, 47.5]]
+    m_inset = Basemap(
+        projection="merc",
+        llcrnrlon=ne_bounds[0][0],
+        llcrnrlat=ne_bounds[1][0],
+        urcrnrlon=ne_bounds[0][1],
+        urcrnrlat=ne_bounds[1][1],
+        resolution="i",
+        ax=ax_inset,
+    )
+    m_inset.drawcoastlines(linewidth=0.5, color="black")
+    m_inset.fillcontinents(color="lightgray", lake_color="white")
+
+    # Draw box showing main plot location
+    xy_box = m_inset(bbox_outer[0][0], bbox_outer[1][0])
+    xwidth_box = m_inset(bbox_outer[0][1], bbox_outer[1][0])[0] - xy_box[0]
+    yheight_box = m_inset(bbox_outer[0][0], bbox_outer[1][1])[1] - xy_box[1]
+
+    context_box = Rectangle(
+        xy_box,
+        xwidth_box,
+        yheight_box,
+        linewidth=1.0,
+        edgecolor="blue",
+        facecolor="none",
+    )
+    ax_inset.add_patch(context_box)
+
+    # Add colorbar for bearing lines
+    norm = Normalize(vmin=times.min(), vmax=times.max())
+    sm = ScalarMappable(cmap=plt.cm.RdPu, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, orientation="horizontal", shrink=0.7, pad=-0.05)
+    cbar.set_label("Time of bearing estimate to whale (HH:MM)")
+
+    # Format colorbar ticks as datetime strings (HH:MM)
+    tick_times = np.linspace(times.min(), times.max(), 5)
+    cbar.set_ticks(tick_times)
+    cbar.set_ticklabels(
+        [str(np.datetime64(int(t), "ns")).split("T")[1][:5] for t in tick_times]
+    )
+
     return fig
 
 
 def main(
     bathy_data: Path,
-    das_location: Path,
     equipment: Path,
     turbines: Path,
-    bounds_file: Path,
     active_turbine_name: str,
     savepath: Path,
     dpi: int = 300,
 ) -> None:
-    maps = ["bounds", "inset"]
-
     logging.info("Loading data and plotting map.")
     bathy, lonvec, latvec = readers.read_bathymetry(bathy_data)
-    das_locations = pl.read_csv(das_location)
     equip_locations = pl.read_csv(equipment)
     turbine_locations = pl.read_csv(turbines)
-
-    bboxes = {
-        "bounds": readers.read_bbox(bounds_file, "bounds"),
-        "inset": readers.read_bbox(bounds_file, "inset"),
-    }
 
     active_turbine = {
         "label": f"Turbine {active_turbine_name}",
@@ -121,32 +202,34 @@ def main(
         .select("lat")
         .item(),
     }
-    sound_trap = {
-        "label": "Monitor Hydrophone",
-        "longitude": equip_locations.filter(pl.col("name") == "Monitor")
-        .select("longitude")
-        .item(),
-        "latitude": equip_locations.filter(pl.col("name") == "Monitor")
-        .select("latitude")
-        .item(),
-    }
+
+    bearings = np.linspace(160.0, 170.0, 6)
+    start_time = np.datetime64("2023-12-01T22:15:00", "ns")
+    end_time = np.datetime64("2023-12-01T22:25:00", "ns")
+    times = np.linspace(
+        start_time.astype("int64"),
+        end_time.astype("int64"),
+        len(bearings),
+        dtype=np.int64,
+    )
 
     logging.info("Creating map figure.")
     fig = create_map(
-        maps,
         bathy,
         lonvec,
         latvec,
-        das_locations,
         equip_locations,
         turbine_locations,
         active_turbine,
-        bboxes,
-        sound_trap=sound_trap,
+        BBOX_INSET,
+        BBOX_OUTER,
+        bearings,
+        times,
     )
 
     savepath.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
+    fig.savefig(savepath, dpi=dpi)
+    # fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     logging.info(f"Map saved to {savepath.resolve()}")
 
@@ -162,12 +245,6 @@ if __name__ == "__main__":
         help="Path to the bathymetry data file (HDF5 format).",
     )
     parser.add_argument(
-        "--das_location",
-        type=Path,
-        default=get_path("das_location"),
-        help="Path to the file containing DAS locations.",
-    )
-    parser.add_argument(
         "--equipment",
         type=Path,
         default=get_path("equipment_config"),
@@ -178,12 +255,6 @@ if __name__ == "__main__":
         type=Path,
         default=get_path("turbine_config"),
         help="Path to the file containing turbine locations.",
-    )
-    parser.add_argument(
-        "--bounds_file",
-        type=Path,
-        default=get_path("bounds_file"),
-        help="Path to the file containing bounding box coordinates.",
     )
     parser.add_argument(
         "--active_turbine",
@@ -212,10 +283,8 @@ if __name__ == "__main__":
     logger.setLevel(logging.INFO if args.verbose else logging.ERROR)
     main(
         args.bathy_data,
-        args.das_location,
         args.equipment,
         args.turbines,
-        args.bounds_file,
         args.active_turbine,
         args.savepath,
         args.dpi,

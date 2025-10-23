@@ -77,6 +77,8 @@ def plot_bathy(
     m: Basemap,
     ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
+    levelsf = np.arange(-100, 10, 5),
+    levelsc = np.arange(-100, 1, 5),
 ) -> tuple[plt.contourf, Axes]:
 
     data[data > 0] = 0.1
@@ -101,8 +103,6 @@ def plot_bathy(
     # Create the BoundaryNorm
     norm = colors.BoundaryNorm(boundaries, custom_cmap.N)
 
-    levelsf = np.arange(-100, 10, 5)
-    levelsc = np.arange(-100, 1, 5)
     lonlon, latlat = np.meshgrid(lonvec, latvec)
     im = m.contourf(
         lonlon,
@@ -136,7 +136,7 @@ def plot_bathy(
         ax=ax,
     )
     ax.clabel(
-        CS_water, inline=True, fmt="%1.0f", fontsize=plt.rcParams["font.size"] - 2
+        CS_water, inline=True, fmt=lambda x: f"{abs(x):.0f}", fontsize=plt.rcParams["font.size"] - 2
     )
     return im, ax
 
@@ -866,24 +866,21 @@ def plot_study_area(
     bathy_data: NDArray[np.float64],
     lonvec: NDArray[np.float64],
     latvec: NDArray[np.float64],
-    das_df: pd.DataFrame,
-    equipment_df: pd.DataFrame,
-    turbines_df: pd.DataFrame,
+    equipment_df: pd.DataFrame | None = None,
+    turbines_df: pd.DataFrame | None = None,
     active_turbine: dict | None = None,
-    sound_trap: dict | None = None,
     bounds: list[list[float]] | None = None,
     ax: Axes | None = None,
-    scale_bar: float = 1.0,
+    scale_bar: int = 1,
     shallowest_contour_depth: float = 0.0,
-    legend_loc: str | None = None,
+    levelsf = np.arange(-100, 10, 5),
+    levelsc = np.arange(-100, 1, 5),
     meridians: float = 0.2,
     parallels: float = 0.2,
     meridian_labels: list[int] = [0, 0, 1, 0],
     parallel_labels: list[int] = [1, 0, 0, 0],
-    inset: list[list[float]] | None = None,
-    *args,
-    **kwargs,
-) -> Axes:
+    show_legend: bool = True,
+) -> tuple[Axes, Basemap]:
     if bounds is None:
         llcrnrlat = np.min(latvec)
         urcrnrlat = np.max(latvec)
@@ -896,7 +893,6 @@ def plot_study_area(
         llcrnrlat = bounds[1][0]
         urcrnrlat = bounds[1][1]
 
-    # fig = plt.figure(figsize=figsize)
     if ax is None:
         ax = plt.gca()
 
@@ -926,18 +922,22 @@ def plot_study_area(
         m=m,
         ax=ax,
         shallowest_contour_depth=shallowest_contour_depth,
+        levelsf=levelsf,
+        levelsc=levelsc,
     )
 
-    ax.scatter(
-        *m(turbines_df["lon"], turbines_df["lat"]),
-        marker="h",
-        c="yellow",
-        edgecolors="k",
-        # linewidth=1,
-        # s=150,
-        zorder=20,
-        label="Turbines",
-    )
+    if turbines_df is not None:
+        ax.scatter(
+            *m(turbines_df["lon"], turbines_df["lat"]),
+            marker="h",
+            c="yellow",
+            edgecolors="k",
+            # linewidth=1,
+            # s=150,
+            zorder=20,
+            label="Turbines",
+        )
+
     if active_turbine is not None:
         ax.scatter(
             *m(active_turbine["longitude"], active_turbine["latitude"]),
@@ -950,86 +950,29 @@ def plot_study_area(
             label=active_turbine["label"],
         )
 
-    ax.plot(
-        *m(das_df["longitude"], das_df["latitude"]),
-        c="tab:red",
-        linewidth=2,
-        label="MVCO DAS Array",
-        zorder=20,
-    )
-    ax.scatter(
-        *m(-70.566595, 41.324978),
-        marker="d",
-        c="tab:red",
-        edgecolors="k",
-        zorder=20,
-        label="WHOI Air-Sea Interation Tower",
-    )
-    ax.scatter(
-        *m(equipment_df["longitude"], equipment_df["latitude"]),
-        marker="v",
-        c="tab:green",
-        edgecolors="k",
-        # linewidth=1,
-        zorder=20,
-        label="VLA",
-    )
-
-    if inset:
-        polygon = draw_polygon(
-            m,
-            longitudes=[
-                inset[0][0] - 0.01,
-                inset[0][1],
-                inset[0][1],
-                inset[0][0] - 0.01,
-            ],
-            latitudes=[
-                inset[1][0] - 0.01,
-                inset[1][0] - 0.01,
-                inset[1][1],
-                inset[1][1],
-            ],
-            fill=False,
-            edgecolor="b",
-            linewidth=1,
-        )
-        ax.add_patch(polygon)
-    if sound_trap is not None:
+    if equipment_df is not None:
         ax.scatter(
-            *m(sound_trap["longitude"], sound_trap["latitude"]),
-            marker="s",
-            c="tab:blue",
+            *m(equipment_df["longitude"], equipment_df["latitude"]),
+            marker="v",
+            c="tab:green",
             edgecolors="k",
             # linewidth=1,
-            # s=150,
-            zorder=30,
-            label=sound_trap["label"],
+            zorder=20,
+            label="Hydrophone Array",
         )
 
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
-    if legend_loc:
+    if show_legend:
         leg = ax.legend(
             facecolor="white",
             edgecolor="black",
-            loc="upper left",
-            bbox_to_anchor=(-0.7, -0.05),
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.05),
             ncol=3,
         )
         leg.get_frame().set_alpha(None)
-
-    if kwargs.get("type") == "inset":
-        ax.text(
-            0.02,
-            0.982,
-            "Inset",
-            ha="left",
-            va="top",
-            transform=ax.transAxes,
-            bbox=dict(facecolor="white", edgecolor="black"),
-        )
 
     scalebar = AnchoredSizeBar(
         ax.transData,
@@ -1044,4 +987,4 @@ def plot_study_area(
     )
     ax.add_artist(scalebar)
 
-    return ax
+    return ax, m

@@ -78,13 +78,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--xres",
         type=int,
-        default=400,
+        default=800,
         help="Set the x resolution of the bathymetry data.",
     )
     parser.add_argument(
         "--yres",
         type=int,
-        default=400,
+        default=800,
         help="Set the y resolution of the bathymetry data.",
     )
     args = parser.parse_args()
