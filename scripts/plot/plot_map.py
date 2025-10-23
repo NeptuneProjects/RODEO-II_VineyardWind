@@ -8,6 +8,7 @@ from pathlib import Path
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
+from matplotlib.offsetbox import AnchoredText
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -81,6 +82,21 @@ def create_map(
         levelsf=np.arange(-100, 10, 5),
         levelsc=np.arange(-100, 1, 5),
     )
+    # Add panel label with outer box edge flush to corner
+    # Use offsetbox approach to precisely position text box including padding
+    anchored_text = AnchoredText(
+        "a)",
+        loc="upper left",
+        prop=dict(fontsize=9, fontweight="bold"),
+        frameon=True,
+        pad=0.0,
+        borderpad=0.5,
+    )
+    anchored_text.patch.set_boxstyle("square,pad=0.3")
+    anchored_text.patch.set_edgecolor("black")
+    anchored_text.patch.set_facecolor("white")
+    anchored_text.zorder = 50
+    ax.add_artist(anchored_text)
 
     ax = axes[1]
     ax, m = plotting.plot_study_area(
@@ -134,7 +150,9 @@ def create_map(
         )
 
     # Add inset map showing New England context
-    ax_inset = inset_axes(ax, width="25%", height="25%", loc="upper right", borderpad=0.5)
+    ax_inset = inset_axes(
+        ax, width="25%", height="25%", loc="upper right", borderpad=0.5
+    )
     ne_bounds = [[-77.5, -62.5], [32.5, 47.5]]
     m_inset = Basemap(
         projection="merc",
@@ -162,6 +180,20 @@ def create_map(
         facecolor="none",
     )
     ax_inset.add_patch(context_box)
+
+    anchored_text = AnchoredText(
+        "b)",
+        loc="upper left",
+        prop=dict(fontsize=9, fontweight="bold"),
+        frameon=True,
+        pad=0.0,
+        borderpad=0.5,
+    )
+    anchored_text.patch.set_boxstyle("square,pad=0.3")
+    anchored_text.patch.set_edgecolor("black")
+    anchored_text.patch.set_facecolor("white")
+    anchored_text.zorder = 50
+    axes[1].add_artist(anchored_text)
 
     # Add colorbar for bearing lines
     norm = Normalize(vmin=times.min(), vmax=times.max())
