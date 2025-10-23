@@ -26,6 +26,7 @@ def plot_bearings(df: pl.DataFrame):
 
     ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
     ax.xaxis.set_major_formatter(DateFormatter("%H:%M:%S"))
+    ax.set_ylim(160, 180)
 
     ax.set_xlabel("Time")
     ax.set_ylabel("Bearing (degrees)")
