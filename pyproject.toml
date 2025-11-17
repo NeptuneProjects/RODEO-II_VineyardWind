@@ -46,4 +46,4 @@ TritonOA = { git = "ssh://git@github.com/TritonOA/TritonOA.git" }
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/vineyard_wind"]
+packages = ["src"]
