@@ -136,6 +136,8 @@ def process_datastream(
 
     # Initialize HDF file and datasets - keep file open during processing
     hdf_path = get_path("template_data")
+    hdf_path.parent.mkdir(parents=True, exist_ok=True)
+    
     with h5py.File(hdf_path, "a") as f:
         if name in f:
             logging.warning(
