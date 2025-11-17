@@ -61,12 +61,19 @@ If any keys in the computer-specific sections are the same as the default keys, 
    `python scripts/setup/acoustic_inventory.py`  
    The inventory is performed for each station, and saved as:  
    `data/inventory/inventory_SHRU905_VLA1.csv`
-3. Detect pile driving strikes in the acoustic data by running:
+3. Detect pile driving strikes in the acoustic data by running:  
    `python scripts/process/strikes_find.py`
 4. Extract, process, and save all strikes to an HDF5 database:  
    `python scripts/process/strikes_save.py`
 5. Compute cross-correlations between all strike pairs:  
    `python scripts/process/strikes_corr.py`
-6. Build database of templates:
+6. Build database of templates:  
    `python scripts/process/template_extraction.py`
-   
+7. Denoise the signal using the templates:  
+   `python scripts/process/denoise.py`
+8. Pulse compress the denoised signals with the whale call:  
+   `python scripts/process/denoised_pulse_compression.py`
+9. Find peaks and compute TDOA estimates:  
+   `python scripts/process/tdoa_compute.py`
+10. Localize the TDOA estimates:  
+    `python scripts/process/tdoa_localize.py`
