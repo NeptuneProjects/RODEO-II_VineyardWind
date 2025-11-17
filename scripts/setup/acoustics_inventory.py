@@ -29,7 +29,7 @@ def main(config_file: Path) -> None:
         hyd_cfg = config[key].get("hydrophone", None)
 
         if clock_cfg is None:
-            clock_params = None
+            clock_params = ClockParameters()
         else:
             time_check_0 = np.datetime64(clock_cfg["time_check_0"])
             time_check_1 = np.datetime64(clock_cfg["time_check_1"])
@@ -41,7 +41,7 @@ def main(config_file: Path) -> None:
             )
 
         if hyd_cfg is None:
-            signal_params = None
+            signal_params = SignalParams()
         else:
             signal_params = SignalParams(
                 gain=hyd_cfg["fixed_gain"],
