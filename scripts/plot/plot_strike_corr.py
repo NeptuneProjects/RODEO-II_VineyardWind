@@ -36,7 +36,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=Path,
-        default=get_path("figures") / "strike_corr_19-25.png",
+        default=get_path("figures") / "strike_correlation" / "strike_corr_19-25.png",
         help="Path to save the output plot.",
     )
     parser.add_argument(
