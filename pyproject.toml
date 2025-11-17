@@ -33,7 +33,7 @@ dependencies = [
     "scipy",
     "seaborn",
     "tqdm",
-    "rodeo @ file:///${PROJECT_ROOT}/../core",
+    "rodeo @ file://../core",
     "TritonOA @ git+ssh://git@github.com/TritonOA/TritonOA.git",
 ]
 requires-python = ">= 3.12"
