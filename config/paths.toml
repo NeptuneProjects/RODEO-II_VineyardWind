@@ -9,7 +9,7 @@ bounds_file = "./config/map_bounds.toml"
 bathy_data = "./data/bathy/bathy.hdf5"
 # Figures
 figures = "./reports/figures"
-jasa_style = "./config/jasa_fig_style.mplstyle"
+fig_style = "./config/scirep_fig_style.mplstyle"
 # Equipment
 equipment_config = "./config/experiment/equipment.csv"
 distance_lut = "./config/experiment/distances.csv"
