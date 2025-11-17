@@ -95,16 +95,17 @@ def get_template_inds(
     Returns:
         list[list[int]]: List of lists containing template indices for each signal.
     """
-    inds = []
-    for i in range(num_signals):
-        start_idx = max(0, i - window_size)
-        end_idx = min(num_signals - 1, i + window_size)
-        template_inds = []
-        for j in range(start_idx, end_idx + 1):
-            if corrs[i, j] > threshold:
-                template_inds.append(j)
-        inds.append(template_inds)
-    return inds
+    # Create a mask for the window constraint (vectorized)
+    row_idx, col_idx = np.meshgrid(
+        np.arange(num_signals), np.arange(num_signals), indexing="ij"
+    )
+    window_mask = np.abs(row_idx - col_idx) <= window_size
+
+    # Apply correlation threshold and window mask
+    valid_mask = (corrs > threshold) & window_mask
+
+    # Extract indices for each row
+    return [np.where(valid_mask[i])[0].tolist() for i in range(num_signals)]
 
 
 def get_window_inds(
@@ -125,6 +126,7 @@ def process_datastream(
     corr_cutoff: float = 0.9,
     window_size: int = 20,
     save_plots: bool = False,
+    preload_traces: bool = True,
 ) -> None:
     all_template_inds = get_template_inds(
         strike_index.shape[0], corrs, threshold=corr_cutoff, window_size=window_size
@@ -137,7 +139,7 @@ def process_datastream(
     # Initialize HDF file and datasets - keep file open during processing
     hdf_path = get_path("template_data")
     hdf_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with h5py.File(hdf_path, "a") as f:
         if name in f:
             logging.warning(
@@ -159,17 +161,32 @@ def process_datastream(
         previous_template_inds = []
         traces = None
 
+        # Helper function to extract a trace on-demand
+        def get_trace(idx: int) -> np.ndarray:
+            ref_start = np.datetime64(strike_index.item(idx, "start_time"))
+            ref_end = np.datetime64(strike_index.item(idx, "end_time"))
+            return ds.copy().trim(starttime=ref_start, endtime=ref_end).data[0]
+
+        # Pre-extract all strike traces if preload mode is enabled
+        if preload_traces:
+            logging.info(f"Pre-extracting {num_strikes} strike traces for {name}...")
+            strike_traces = []
+            for i in tqdm(
+                range(num_strikes), desc="Pre-extracting traces", total=num_strikes
+            ):
+                strike_traces.append(get_trace(i))
+        else:
+            logging.info(f"Using on-demand trace loading for {name} (memory-efficient mode)")
+            strike_traces = None
+
         for i in tqdm(
             range(num_strikes),
             desc=f"Processing {name}",
             total=num_strikes,
             unit="strike",
         ):
-            ref_start = np.datetime64(strike_index.item(i, "start_time"))
-            ref_end = np.datetime64(strike_index.item(i, "end_time"))
-            reference_trace = (
-                ds.copy().trim(starttime=ref_start, endtime=ref_end).data[0]
-            )
+            # Load trace based on mode
+            reference_trace = strike_traces[i] if preload_traces else get_trace(i)
 
             start_index, end_index = get_window_inds(
                 ds.stats.sampling_rate,
@@ -178,8 +195,8 @@ def process_datastream(
                 end_buffer,
             )
 
-            template_inds = all_template_inds[i]
-            template_inds.remove(i)
+            # Use list comprehension instead of remove() to avoid modifying the list
+            template_inds = [idx for idx in all_template_inds[i] if idx != i]
 
             # Case 1: No templates found, and no previous template
             # Action: Use the reference trace as the template
@@ -206,15 +223,8 @@ def process_datastream(
             else:
                 traces = [reference_trace]
                 for j in template_inds:
-                    orig_template_start = np.datetime64(
-                        strike_index.item(j, "start_time")
-                    )
-                    orig_template_end = np.datetime64(strike_index.item(j, "end_time"))
-                    tr = (
-                        ds.copy()
-                        .trim(starttime=orig_template_start, endtime=orig_template_end)
-                        .data[0]
-                    )
+                    # Load trace based on mode
+                    tr = strike_traces[j] if preload_traces else get_trace(j)
                     fs = ds.stats.sampling_rate
 
                     xcorr = correlate(reference_trace, tr, mode="same")
@@ -232,6 +242,8 @@ def process_datastream(
                         np.datetime64(strike_index.item(j, "end_time")) - dt
                     )
 
+                    # Need to extract from datastream at corrected times
+                    # (can't use pre-extracted traces here as times are shifted)
                     template_tr = (
                         ds.copy()
                         .trim(
@@ -303,6 +315,7 @@ def main(
     corr_cutoff: float,
     window_size: float,
     save_plots: bool,
+    preload_traces: bool,
 ) -> None:
     for sensor in SENSORS:
         name = sensor["name"]
@@ -322,12 +335,13 @@ def main(
             corr_cutoff=corr_cutoff,
             window_size=window_size,
             save_plots=save_plots,
+            preload_traces=preload_traces,
         )
 
 
 if __name__ == "__main__":
     logging.basicConfig(**logging_kwargs)
-    logging.getLogger('matplotlib').setLevel(logging.ERROR)
+    logging.getLogger("matplotlib").setLevel(logging.ERROR)
     parser = ArgumentParser(description="Process Vineyard Wind acoustic data.")
     parser.add_argument(
         "--start",
@@ -365,6 +379,13 @@ if __name__ == "__main__":
         default=True,
         help="Save a plot of each template.",
     )
+    parser.add_argument(
+        "--preload-traces",
+        action="store_true",
+        default=False,
+        help="Pre-extract all traces into memory (faster but uses more RAM). "
+             "If not set, traces are loaded on-demand (slower but memory-efficient).",
+    )
     args = parser.parse_args()
     time_start = np.datetime64(args.start, TIME_PRECISION)
     time_end = np.datetime64(args.end, TIME_PRECISION)
@@ -376,4 +397,5 @@ if __name__ == "__main__":
         args.corr_cutoff,
         args.window_size,
         args.save_plots,
+        args.preload_traces,
     )
