@@ -327,6 +327,7 @@ def main(
 
 if __name__ == "__main__":
     logging.basicConfig(**logging_kwargs)
+    logging.getLogger('matplotlib').setLevel(logging.ERROR)
     parser = ArgumentParser(description="Process Vineyard Wind acoustic data.")
     parser.add_argument(
         "--start",
