@@ -1,5 +1,5 @@
 [config]
-jasa_style = "config/jasa_fig_style.mplstyle"
+fig_style = "config/scirep_fig_style.mplstyle"
 
 [data]
 bathy = "data/bathy"
