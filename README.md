@@ -58,7 +58,7 @@ If any keys in the computer-specific sections are the same as the default keys, 
 
 1. Configure the dataset inventory using the file `config/inventory.toml`.
 2. Build the dataset inventory by running:  
-   `python scripts/setup/inventory.py`  
+   `python scripts/setup/acoustic_inventory.py`  
    The inventory is performed for each station, and saved as:  
    `data/inventory/inventory_SHRU905_VLA1.csv`
 3. Detect pile driving strikes in the acoustic data by running:
