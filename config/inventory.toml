@@ -2,7 +2,8 @@
 [SHRU905_VLA1]
 
 [SHRU905_VLA1.data]
-directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+directory = "./data/acoustic/raw"
 glob_pattern = "VLA1_shru905*/[!._]*.D23"
 destination = "data/acoustic/inventory_SHRU905_VLA1.csv"
 file_format = "SHRU"
@@ -15,7 +16,8 @@ serial_number = ["722017", "722019", "722020", "722022"]
 [SHRU920_VLA2]
 
 [SHRU920_VLA2.data]
-directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+directory = "./data/acoustic/raw"
 glob_pattern = "VLA2_shru920*/[!._]*.D23"
 destination = "data/acoustic/inventory_SHRU920_VLA2.csv"
 file_format = "SHRU"
@@ -29,7 +31,8 @@ serial_number = ["722013", "722014", "722015", "722016"]
 [3DVHA]
 
 [3DVHA.data]
-directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
+directory = "./data/acoustic/raw"
 glob_pattern = "3DVHA/acoustics/*.bin"
 destination = "data/acoustic/inventory_3DVHA.csv"
 file_format = "whoi3dvha"
