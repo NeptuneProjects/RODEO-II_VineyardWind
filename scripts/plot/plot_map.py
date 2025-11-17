@@ -24,29 +24,6 @@ import vineyard.readers as readers
 BBOX_INSET = [[-70.65, -70.249], [40.9, 41.201]]
 BBOX_OUTER = [[-71.0, -68.999], [39.5, 41.601]]
 
-map_kwargs = {
-    "bounds": {
-        "type": "bounds",
-        "meridians": 0.2,
-        "parallels": 0.2,
-        "meridian_labels": [0, 0, 1, 0],
-        "parallel_labels": [1, 0, 0, 0],
-        "legend_loc": None,
-        "scale_bar": 10,
-        "shallowest_contour_depth": -10.0,
-    },
-    "inset": {
-        "type": "inset",
-        "meridians": 0.01,
-        "parallels": 0.01,
-        "meridian_labels": [0, 0, 0, 1],
-        "parallel_labels": [0, 1, 0, 0],
-        "legend_loc": "upper left",
-        "scale_bar": 1,
-        "shallowest_contour_depth": -4.0,
-    },
-}
-
 
 def create_map(
     bathy: dict,
@@ -69,36 +46,6 @@ def create_map(
     )
 
     ax = axes[0]
-    ax, _ = plotting.plot_study_area(
-        bathy,
-        lonvec,
-        latvec,
-        equipment_df=equip_locations,
-        turbines_df=turbine_locations,
-        active_turbine=active_turbine,
-        bounds=bbox_inset,
-        ax=ax,
-        scale_bar=10,
-        levelsf=np.arange(-100, 10, 5),
-        levelsc=np.arange(-100, 1, 5),
-    )
-    # Add panel label with outer box edge flush to corner
-    # Use offsetbox approach to precisely position text box including padding
-    anchored_text = AnchoredText(
-        "a)",
-        loc="upper left",
-        prop=dict(fontsize=9, fontweight="bold"),
-        frameon=True,
-        pad=0.0,
-        borderpad=0.5,
-    )
-    anchored_text.patch.set_boxstyle("square,pad=0.3")
-    anchored_text.patch.set_edgecolor("black")
-    anchored_text.patch.set_facecolor("white")
-    anchored_text.zorder = 50
-    ax.add_artist(anchored_text)
-
-    ax = axes[1]
     ax, m = plotting.plot_study_area(
         bathy,
         lonvec,
@@ -110,7 +57,7 @@ def create_map(
         scale_bar=50,
         meridians=0.5,
         parallels=0.5,
-        parallel_labels=[0, 1, 0, 0],
+        # parallel_labels=[0, 1, 0, 0],
         shallowest_contour_depth=-1.0,
         levelsf=np.arange(-2500, 100, 50),
         levelsc=np.arange(-2500, 40, 50),
@@ -182,9 +129,9 @@ def create_map(
     ax_inset.add_patch(context_box)
 
     anchored_text = AnchoredText(
-        "b)",
+        "a",
         loc="upper left",
-        prop=dict(fontsize=9, fontweight="bold"),
+        prop=dict(fontsize=8, fontweight="bold"),
         frameon=True,
         pad=0.0,
         borderpad=0.5,
@@ -193,21 +140,52 @@ def create_map(
     anchored_text.patch.set_edgecolor("black")
     anchored_text.patch.set_facecolor("white")
     anchored_text.zorder = 50
-    axes[1].add_artist(anchored_text)
+    ax.add_artist(anchored_text)
 
     # Add colorbar for bearing lines
     norm = Normalize(vmin=times.min(), vmax=times.max())
     sm = ScalarMappable(cmap=plt.cm.RdPu, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, orientation="horizontal", shrink=0.7, pad=-0.05)
-    cbar.set_label("Time of bearing estimate to whale (HH:MM)")
+    cbar.set_label("Time (HH:MM)")
 
     # Format colorbar ticks as datetime strings (HH:MM)
     tick_times = np.linspace(times.min(), times.max(), 5)
     cbar.set_ticks(tick_times)
     cbar.set_ticklabels(
-        [str(np.datetime64(int(t), "ns")).split("T")[1][:5] for t in tick_times]
+        [str(np.datetime64(int(t), "us")).split("T")[1][:5] for t in tick_times]
     )
+
+    ax = axes[1]
+    ax, _ = plotting.plot_study_area(
+        bathy,
+        lonvec,
+        latvec,
+        equipment_df=equip_locations,
+        turbines_df=turbine_locations,
+        active_turbine=active_turbine,
+        bounds=bbox_inset,
+        ax=ax,
+        scale_bar=10,
+        levelsf=np.arange(-100, 10, 5),
+        levelsc=np.arange(-100, 1, 5),
+        parallel_labels=[0, 1, 0, 0],
+    )
+    # Add panel label with outer box edge flush to corner
+    # Use offsetbox approach to precisely position text box including padding
+    anchored_text = AnchoredText(
+        "b",
+        loc="upper left",
+        prop=dict(fontsize=8, fontweight="bold"),
+        frameon=True,
+        pad=0.0,
+        borderpad=0.5,
+    )
+    anchored_text.patch.set_boxstyle("square,pad=0.3")
+    anchored_text.patch.set_edgecolor("black")
+    anchored_text.patch.set_facecolor("white")
+    anchored_text.zorder = 50
+    ax.add_artist(anchored_text)
 
     return fig
 
@@ -217,6 +195,7 @@ def main(
     equipment: Path,
     turbines: Path,
     active_turbine_name: str,
+    whale_bearings: Path,
     savepath: Path,
     dpi: int = 300,
 ) -> None:
@@ -224,6 +203,7 @@ def main(
     bathy, lonvec, latvec = readers.read_bathymetry(bathy_data)
     equip_locations = pl.read_csv(equipment)
     turbine_locations = pl.read_csv(turbines)
+    whale_df = pl.read_csv(whale_bearings).cast({"timestamp": pl.Datetime})
 
     active_turbine = {
         "label": f"Turbine {active_turbine_name}",
@@ -235,14 +215,17 @@ def main(
         .item(),
     }
 
-    bearings = np.linspace(160.0, 170.0, 6)
-    start_time = np.datetime64("2023-12-01T22:15:00", "ns")
-    end_time = np.datetime64("2023-12-01T22:25:00", "ns")
-    times = np.linspace(
-        start_time.astype("int64"),
-        end_time.astype("int64"),
-        len(bearings),
-        dtype=np.int64,
+    unamb_bearings = whale_df.filter(pl.col("vla1_brg") > 90)
+    amb_bearings = whale_df.filter(pl.col("vla1_brg") < 90)
+    amb_bearings = amb_bearings.with_columns(
+        pl.col("vla1_brg").add(2 * (90 - pl.col("vla1_brg")))
+    )
+    corr_whale_df = pl.concat([unamb_bearings, amb_bearings]).filter(
+        pl.col("vla1_brg") < 175, pl.col("vla1_brg") > 155
+    ).sort("timestamp")
+    bearings = corr_whale_df["vla1_brg"].to_numpy()
+    times = np.array(
+        [np.datetime64(i, "us").astype("int64") for i in corr_whale_df["timestamp"]]
     )
 
     logging.info("Creating map figure.")
@@ -261,7 +244,6 @@ def main(
 
     savepath.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(savepath, dpi=dpi)
-    # fig.savefig(savepath, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     logging.info(f"Map saved to {savepath.resolve()}")
 
@@ -295,6 +277,12 @@ if __name__ == "__main__":
         help="Active turbine identifier (default: AN36).",
     )
     parser.add_argument(
+        "--bearings",
+        type=Path,
+        default=get_path("tdoa_data") / "tdoa_with_locations.csv",
+        help="Path to the file containing turbine locations.",
+    )
+    parser.add_argument(
         "--savepath",
         type=Path,
         default=get_path("figures") / "maps" / "map.png",
@@ -318,6 +306,7 @@ if __name__ == "__main__":
         args.equipment,
         args.turbines,
         args.active_turbine,
+        args.bearings,
         args.savepath,
         args.dpi,
     )
