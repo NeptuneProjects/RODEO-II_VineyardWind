@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read index of pile driving strikes and save pulses to an HDF5 file."""
+"""Read index of pile driving strikes and save pulses to an HDF5 database."""
 
 from argparse import ArgumentParser
 from collections.abc import Sequence
@@ -29,7 +29,7 @@ def main(
 
     with h5py.File(output, "w") as file:
         for row in tqdm(df.iter_rows(), desc="Processing strikes", total=df.shape[0]):
-            sensor, channel, strike_index, _, time_start, time_end = row
+            sensor, channel, strike_index, _, _, time_start, time_end = row
             ds = read_acoustic_data(
                 get_path(f"{sensor}_inventory"),
                 time_start,
@@ -47,7 +47,7 @@ def main(
 
 if __name__ == "__main__":
     logging.basicConfig(**logging_kwargs)
-    parser = ArgumentParser(description="Save strike data to an HDF file.")
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "--index",
         type=Path,
@@ -75,19 +75,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--detrend",
         action="store_true",
-        default=True,
+        default=False,
         help="Whether to detrend the data before processing.",
     )
     parser.add_argument(
         "--taper_pc",
         type=float,
-        default=0.05,
+        default=None,
         help="Percentage of taper to apply to the data.",
     )
     parser.add_argument(
         "--dec_factor",
         type=int,
-        default=20,
+        default=None,
         help="Decimation factor for the data.",
     )
     parser.add_argument(
