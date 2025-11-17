@@ -156,7 +156,7 @@ if __name__ == "__main__":
         "--max-workers",
         type=int,
         help="Number of workers to use for parallel processing.",
-        default=12,
+        default=10,
     )
     parser.add_argument(
         "--output",
@@ -167,19 +167,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--detrend",
         action="store_true",
-        default=False,
+        default=True,
         help="Apply detrending to the signals before processing.",
     )
     parser.add_argument(
         "--taper_pc",
         type=float,
-        default=None,
+        default=0.05,
         help="Percentage of the signal to taper at the beginning and end.",
     )
     parser.add_argument(
         "--dec_factor",
         type=int,
-        default=None,
+        default=20,
         help="Decimation factor to apply to the signals.",
     )
     parser.add_argument(
