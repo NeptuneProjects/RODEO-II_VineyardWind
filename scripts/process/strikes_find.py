@@ -15,10 +15,56 @@ from vineyard.config import get_path
 from vineyard.readers import read_acoustic_data
 from vineyard.signal import find_strikes
 
-SENSORS = [
+sensors = [
     {"name": "3dvha", "channel": 7, "distance_sec": 1.0, "threshold": 0.05},
     {"name": "vla1", "channel": 3, "distance_sec": 1.0, "threshold": 0.05},
     {"name": "vla2", "channel": 0, "distance_sec": 1.0, "threshold": 0.02},
+]
+time_ranges = [
+    (
+        np.datetime64("2023-12-01T21:06:55.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:09:30.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:09:50.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:11:20.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:11:45.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:16:00.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:16:15.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:18:15.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:18:45.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:24:55.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:25:20.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:31:40.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:32:00.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:36:10.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:36:20.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:41:20.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:41:40.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:45:15.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:45:30.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T21:47:15.00", TIME_PRECISION),
+    ),
+    (
+        np.datetime64("2023-12-01T21:51:20.00", TIME_PRECISION),
+        np.datetime64("2023-12-01T22:26:00.00", TIME_PRECISION),
+    ),
 ]
 
 
@@ -26,6 +72,7 @@ def build_strikes_df(
     sensor: dict,
     time_start: np.datetime64,
     time_end: np.datetime64,
+    strike_index_offset: int = 0,
     taper_pc: float = 1e-4,
     dec_factor: int | None = None,
     filt_type: str = "bandpass",
@@ -51,42 +98,39 @@ def build_strikes_df(
         {
             "sensor": name,
             "channel": channel,
-            "strike_index": np.arange(len(peaks)),
+            "strike_index": np.arange(len(peaks)) + strike_index_offset,
             "time": ds.time_vector[peaks],
             "sample": peaks,
         }
     )
 
 
-def main(start: np.datetime64, end: np.datetime64, output: Path) -> None:
-    time_start = start.astype(f"datetime64[{TIME_PRECISION}]")
-    time_end = end.astype(f"datetime64[{TIME_PRECISION}]")
+def main(output: Path) -> None:
+    all_dfs = []
 
-    dfs = []
-    for sensor in SENSORS:
-        raw_df = build_strikes_df(sensor, time_start, time_end)
-        # refined_df = refine_strikes_df(raw_df)
-        dfs.append(raw_df)
+    for sensor in sensors:
+        sensor_dfs = []
+        strike_index_offset = 0
 
-    concat(dfs).write_csv(output)
+        for i, (time_start, time_end) in enumerate(time_ranges):
+            logging.info(
+                f"Processing sensor {sensor['name']}, time range "
+                f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
+            )
+
+            df = build_strikes_df(sensor, time_start, time_end, strike_index_offset)
+            sensor_dfs.append(df)
+            strike_index_offset += len(df)
+
+        all_dfs.extend(sensor_dfs)
+
+    concat(all_dfs).write_csv(output)
     logging.info(f"Strikes extracted and saved to {output}.")
 
 
 if __name__ == "__main__":
     logging.basicConfig(**utils.logging_kwargs)
-    parser = ArgumentParser(description="Extract all strikes from the dataset.")
-    parser.add_argument(
-        "--start",
-        type=np.datetime64,
-        default="2023-12-01T21:51:15.00",
-        help="Start time for extracting strikes.",
-    )
-    parser.add_argument(
-        "--end",
-        type=np.datetime64,
-        default="2023-12-01T22:26:00.00",
-        help="End time for extracting strikes.",
-    )
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
         type=Path,
@@ -94,4 +138,4 @@ if __name__ == "__main__":
         help="Output file to save the extracted strikes.",
     )
     args = parser.parse_args()
-    main(args.start, args.end, args.output)
+    main(args.output)
