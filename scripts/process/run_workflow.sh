@@ -1,3 +1,6 @@
+#!/bin/bash
+# Run the full processing workflow.
+
 python scripts/setup/acoustic_inventory.py
 python scripts/process/strikes_find.py
 python scripts/process/strikes_save.py
