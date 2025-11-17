@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run the full processing workflow.
 
-python scripts/setup/acoustic_inventory.py
+python scripts/setup/acoustics_inventory.py
 python scripts/process/strikes_find.py
 python scripts/process/strikes_save.py
 python scripts/process/strikes_corr.py --max-workers 256
