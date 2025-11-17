@@ -4,6 +4,8 @@ import string
 
 import cmasher as cmr
 import cmocean as cmo
+import matplotlib
+from matplotlib import font_manager
 import matplotlib.colors as colors
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -22,9 +24,24 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 from vineyard import config
 
-JASA_STYLE = Path(config.get_path("jasa_style"))
+FIG_STYLE = Path(config.get_path("fig_style"))
+# FONT_PATH = Path("/System/Library/Fonts/HelveticaNeue.ttc")
+plt.style.use(FIG_STYLE)
 
-plt.style.use(JASA_STYLE)
+# print(matplotlib.rcParams)
+
+# font_dirs = [Path("/System/Library/Fonts")]
+# font_files = font_manager.findSystemFonts(fontpaths=font_dirs)
+# font_list = font_manager.createFontList(font_files)
+# font_manager.fontManager.ttflist.extend(font_list)
+
+# matplotlib.rcParams["font.family"] = "Helvetica Neue"
+
+# font_manager.fontManager.addfont(FONT_PATH)
+# prop = font_manager.FontProperties(fname=FONT_PATH)
+# plt.rcParams["font.family"] = "sans-serif"
+# plt.rcParams["font.sans-serif"] = prop.get_name()
+
 
 SAVEFIG_KWARGS = {
     "bbox_inches": "tight",
@@ -77,8 +94,8 @@ def plot_bathy(
     m: Basemap,
     ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
-    levelsf = np.arange(-100, 10, 5),
-    levelsc = np.arange(-100, 1, 5),
+    levelsf=np.arange(-100, 10, 5),
+    levelsc=np.arange(-100, 1, 5),
 ) -> tuple[plt.contourf, Axes]:
 
     data[data > 0] = 0.1
@@ -136,7 +153,10 @@ def plot_bathy(
         ax=ax,
     )
     ax.clabel(
-        CS_water, inline=True, fmt=lambda x: f"{abs(x):.0f}", fontsize=plt.rcParams["font.size"] - 2
+        CS_water,
+        inline=True,
+        fmt=lambda x: f"{abs(x):.0f}",
+        fontsize=plt.rcParams["font.size"] - 2,
     )
     return im, ax
 
@@ -252,7 +272,7 @@ def plot_corr(
         ) = _format_data(corr, time_diff, window)
 
         epdf_vmin = 0.01
-        epdf_vmax = 0.2
+        epdf_vmax = 0.1
         epdf[epdf < epdf_vmin] = np.nan
 
         tvec = Tgrid[:, 0]
@@ -283,7 +303,6 @@ def plot_corr(
                     cbar = fig.colorbar(im, cax=cax)
                     cbar.set_label("Correlation coefficient")
             if i == 1:
-                # ax.plot(tvec, resampled_data.T, "k", alpha=0.01)
                 im = ax.imshow(
                     epdf,
                     aspect="auto",
@@ -293,9 +312,6 @@ def plot_corr(
                     vmin=epdf_vmin,
                     vmax=epdf_vmax,
                 )
-                # ax.plot(tvec, mean_corr, "r", label="Mean Correlation")
-                # ax.plot(tvec, upper_bounds, "r--")
-                # ax.plot(tvec, lower_bounds, "r--")
                 if j == 0:
                     ax.set_xlabel("$\\tau = t_j - t_i$ (s)")
                     ax.set_ylabel("Correlation coefficient")
@@ -873,8 +889,8 @@ def plot_study_area(
     ax: Axes | None = None,
     scale_bar: int = 1,
     shallowest_contour_depth: float = 0.0,
-    levelsf = np.arange(-100, 10, 5),
-    levelsc = np.arange(-100, 1, 5),
+    levelsf=np.arange(-100, 10, 5),
+    levelsc=np.arange(-100, 1, 5),
     meridians: float = 0.2,
     parallels: float = 0.2,
     meridian_labels: list[int] = [0, 0, 1, 0],
