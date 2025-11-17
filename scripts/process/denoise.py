@@ -140,7 +140,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--start",
         type=str,
-        default="2023-12-01T21:51:15.00",
+        default="2023-12-01T21:06:00.00",
         help="Start time in ISO format (default: 2023-12-01T21:51:15.00)",
     )
     parser.add_argument(
