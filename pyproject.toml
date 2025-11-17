@@ -33,10 +33,14 @@ dependencies = [
     "scipy",
     "seaborn",
     "tqdm",
-    "rodeo @ file://../core",
-    "TritonOA @ git+ssh://git@github.com/TritonOA/TritonOA.git",
+    "rodeo",
+    "TritonOA",
 ]
 requires-python = ">= 3.12"
+
+[tool.uv.sources]
+rodeo = { path = "../core", editable = true }
+TritonOA = { git = "ssh://git@github.com/TritonOA/TritonOA.git" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
