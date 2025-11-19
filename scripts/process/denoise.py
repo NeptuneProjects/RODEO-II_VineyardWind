@@ -131,7 +131,9 @@ def main(start: np.datetime64, end: np.datetime64) -> None:
                 2: "Rejected Signal",
             },
         }
-        ds.write_hdf5(get_path("denoised_data") / f"{sensor['name']}.h5")
+        save_dir = get_path("denoised_data")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        ds.write_hdf5(save_dir / f"{sensor['name']}.h5")
 
 
 if __name__ == "__main__":
