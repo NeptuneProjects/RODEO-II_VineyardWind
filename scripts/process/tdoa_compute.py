@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-
+# TODO: Need to process the peak finding in chunks because the SNR changes 
+# as pile driving progresses.
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 from tritonoa.data.reader import read_hdf5
-from scipy.signal import find_peaks, find_peaks_cwt, hilbert
+from scipy.signal import find_peaks, hilbert
 
 from vineyard.align_detections import (
     correlate_all_references,
@@ -73,7 +73,7 @@ def load_distances(distance_lut: Path) -> tuple[float, float, float]:
 
 def main():
     streams, _ = load_datastreams(
-        get_path("pulse_comp_data"), starttime=np.datetime64("2023-12-01T22:14:00")
+        get_path("pulse_comp_data"), starttime=np.datetime64("2023-12-01T21:06:00")
     )
 
     heights = [0.15, 0.15, 0.15]
