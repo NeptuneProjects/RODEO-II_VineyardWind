@@ -70,6 +70,6 @@ def tdoa(x, y, t, speed, xp, yp) -> tuple[float, float, Callable]:
     J = jacobian(
         x0, y0, x1, y1, x2, y2, (t1 - t0) * speed, (t2 - t0) * speed, (t2 - t1) * speed
     )
-
+    breakpoint()
     pos, _ = leastsq(F, x0=[xp, yp], Dfun=J)
     return pos[0], pos[1], F
