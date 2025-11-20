@@ -69,11 +69,13 @@ If any keys in the computer-specific sections are the same as the default keys, 
    `python scripts/process/strikes_corr.py`
 6. Build database of templates:  
    `python scripts/process/template_extraction.py`
-7. Denoise the signal using the templates:  
+7. Extract templates of the whale calls:  
+   `python scripts/process/whale_extract.py`
+8. Denoise the signal using the templates:  
    `python scripts/process/denoise.py`
-8. Pulse compress the denoised signals with the whale call:  
+9. Pulse compress the denoised signals with the whale call:  
    `python scripts/process/denoised_pulse_compression.py`
-9. Find peaks and compute TDOA estimates:  
+10. Find peaks and compute TDOA estimates:  
    `python scripts/process/tdoa_compute.py`
-10. Localize the TDOA estimates:  
+11. Localize the TDOA estimates:  
     `python scripts/process/tdoa_localize.py`
