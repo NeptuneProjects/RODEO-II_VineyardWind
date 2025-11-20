@@ -30,28 +30,27 @@ def main(file: Path, output_file: Path):
     with open(file, "rb") as f:
         config = tomllib.load(f)
 
-    for sensor in SENSORS:
-        sensor_name = sensor["name"]
-        channel = sensor["channel"]
+    with h5py.File(output_file, "w") as f:
+        for sensor in SENSORS:
+            sensor_name = sensor["name"]
+            channel = sensor["channel"]
 
-        time_start = config[sensor_name]["fin_whale"]["start"]
-        time_end = config[sensor_name]["fin_whale"]["end"]
+            time_start = config[sensor_name]["fin_whale"]["start"]
+            time_end = config[sensor_name]["fin_whale"]["end"]
 
-        template = read_acoustic_data(
-            get_path(f"{sensor_name}_inventory"),
-            time_start,
-            time_end,
-            channels=channel,
-            taper_pc=0.25,
-            filt_type="bandpass",
-            filt_freq=[19.0, 25.0],
-        ).taper(max_percentage=0.25)
+            template = read_acoustic_data(
+                get_path(f"{sensor_name}_inventory"),
+                time_start,
+                time_end,
+                channels=channel,
+                taper_pc=0.25,
+                filt_type="bandpass",
+                filt_freq=[19.0, 25.0],
+            ).taper(max_percentage=0.25)
 
-        with h5py.File(output_file, "w") as f:
             g = f.create_group(f"{sensor_name}_fin_whale")
             template.create_hdf5_dataset(g)
-        
-        print(f"Saved template for {sensor_name} to {output_file}")
+            print(f"Saved template for {sensor_name} to {output_file}")
 
 
 if __name__ == "__main__":
