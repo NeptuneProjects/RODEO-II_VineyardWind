@@ -19,6 +19,7 @@ def main(denoised_data_path: Path, whale_templates_path: Path, output_path: Path
             chan = 1
             ds = read_hdf5(denoised_data_path / f"{sensor}.h5")
             ds.data = ds.data[chan] / np.max(np.abs(ds.data[chan]))
+            print(ds.stats.time_init, ds.stats.time_end)
 
             template = read_hdf5_group(f_whale[f"{sensor}_fin_whale"])
             ds_pc = ds.copy().pulse_compression(template.data.squeeze())
