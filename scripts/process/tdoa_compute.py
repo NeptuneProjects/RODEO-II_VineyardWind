@@ -83,7 +83,9 @@ def main():
     correlations = correlate_all_references(times, time_gates)
     merged_results = merge_correlations(correlations)
     df_tdoa = correlations_to_dataframe(merged_results)
-    df_tdoa.write_csv(get_path("tdoa_data") / "tdoa.csv")
+    save_dir = get_path("tdoa_data")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    df_tdoa.write_csv(save_dir / "tdoa.csv")
 
 
 if __name__ == "__main__":
