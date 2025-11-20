@@ -47,9 +47,11 @@ def main(file: Path, output_file: Path):
             filt_freq=[19.0, 25.0],
         ).taper(max_percentage=0.25)
 
-        with h5py.File(output_file, "a") as f:
+        with h5py.File(output_file, "w") as f:
             g = f.create_group(f"{sensor_name}_fin_whale")
             template.create_hdf5_dataset(g)
+        
+        print(f"Saved template for {sensor_name} to {output_file}")
 
 
 if __name__ == "__main__":
