@@ -215,7 +215,7 @@ def process_datastream(
                 )
                 template_inds = previous_template_inds.copy()
                 tmp_traces, tmp_ref = enforce_same_size([traces, reference_trace])
-                template = np.mean(
+                template = np.median(
                     np.hstack([tmp_traces, tmp_ref[:, np.newaxis]]), axis=1
                 )
             # Case 3: Templates found
