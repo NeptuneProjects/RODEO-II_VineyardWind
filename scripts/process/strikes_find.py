@@ -8,10 +8,9 @@ from pathlib import Path
 
 import numpy as np
 from polars import DataFrame, concat
-from tritonoa.data.time import TIME_PRECISION
 
 from rodeo import utils
-from vineyard.config import get_path
+from vineyard.config import get_path, time_ranges
 from vineyard.readers import read_acoustic_data
 from vineyard.signal import find_strikes
 
@@ -19,52 +18,6 @@ sensors = [
     {"name": "3dvha", "channel": 7, "distance_sec": 1.0, "threshold": 0.05},
     {"name": "vla1", "channel": 3, "distance_sec": 1.0, "threshold": 0.05},
     {"name": "vla2", "channel": 0, "distance_sec": 1.0, "threshold": 0.02},
-]
-time_ranges = [
-    (
-        np.datetime64("2023-12-01T21:06:55.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:09:30.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:09:50.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:11:20.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:11:45.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:16:00.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:16:15.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:18:15.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:18:45.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:24:55.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:25:20.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:31:40.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:32:00.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:36:10.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:36:20.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:41:20.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:41:40.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:45:15.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:45:30.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T21:47:15.00", TIME_PRECISION),
-    ),
-    (
-        np.datetime64("2023-12-01T21:51:20.00", TIME_PRECISION),
-        np.datetime64("2023-12-01T22:26:00.00", TIME_PRECISION),
-    ),
 ]
 
 
