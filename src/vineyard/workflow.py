@@ -5,6 +5,7 @@ from pathlib import Path
 
 from vineyard.config import ConfigModel
 from vineyard.etl import run_etl
+from vineyard.process import process_data
 
 
 def run_workflow(config_path: Path) -> ConfigModel:
@@ -19,9 +20,8 @@ def run_workflow(config_path: Path) -> ConfigModel:
     with open(config_path, "rb") as f:
         config = ConfigModel(**tomllib.load(f))
 
-    print(config)
-
     run_etl(config.etl_config)
+    process_data(config.process_config)
 
     return config
 

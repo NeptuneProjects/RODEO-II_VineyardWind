@@ -2,10 +2,9 @@
 [SHRU905_VLA1]
 
 [SHRU905_VLA1.data]
-# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
-directory = "./data/acoustic/raw"
+directory = "data/acoustic/raw"
 glob_pattern = "VLA1_shru905*/[!._]*.D23"
-destination = "data/acoustic/inventory_SHRU905_VLA1.csv"
+destination = "data/acoustic/inventory_vla1.csv"
 file_format = "SHRU"
 
 [SHRU905_VLA1.hydrophone] # Optional
@@ -16,10 +15,9 @@ serial_number = ["722017", "722019", "722020", "722022"]
 [SHRU920_VLA2]
 
 [SHRU920_VLA2.data]
-# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
-directory = "./data/acoustic/raw"
+directory = "data/acoustic/raw"
 glob_pattern = "VLA2_shru920*/[!._]*.D23"
-destination = "data/acoustic/inventory_SHRU920_VLA2.csv"
+destination = "data/acoustic/inventory_vla2.csv"
 file_format = "SHRU"
 
 [SHRU920_VLA2.hydrophone]
@@ -31,10 +29,9 @@ serial_number = ["722013", "722014", "722015", "722016"]
 [3DVHA]
 
 [3DVHA.data]
-# directory = "/Volumes/T7_Shield/RODEOII/vineyard/acoustic"
-directory = "./data/acoustic/raw"
+directory = "data/acoustic/raw"
 glob_pattern = "3DVHA/acoustics/*.bin"
-destination = "data/acoustic/inventory_3DVHA.csv"
+destination = "data/acoustic/inventory_3dvha.csv"
 file_format = "whoi3dvha"
 
 # [3DVHA.hydrophone]

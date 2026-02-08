@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tritonoa.data.time import TIME_PRECISION
 
 from vineyard.etl import ETLConfig
+from vineyard.process import ProcessConfig
 
 
 CONFIG_FILE = Path(__file__).parents[2] / "config" / "paths.toml"
@@ -130,12 +131,15 @@ class ConfigModel(BaseModel):
 
     metadata_config: MetadataConfig = Field(alias="metadata")
     etl_config: ETLConfig = Field(alias="etl")
+    process_config: ProcessConfig = Field(alias="process")
 
     @model_validator(mode="after")
-    def sync_sensor_data(self) -> "ConfigModel":
+    def sync_attributes(self) -> "ConfigModel":
         """Set etl_config.sensor_data from metadata_config.sensor_data."""
         if self.etl_config.sensor_data is None:
             self.etl_config.sensor_data = self.metadata_config.sensor_data
+        if self.process_config.inventory_path is None:
+            self.process_config.inventory_path = self.etl_config.inventory_dir
         return self
 
 

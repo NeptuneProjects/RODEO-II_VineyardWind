@@ -1,12 +1,91 @@
 [metadata]
-sensor_data = "./data/sensors.csv"
-turbine_data = "./data/turbines.csv"
+sensor_data = "data/sensors.csv"
+turbine_data = "data/turbines.csv"
 
 [etl]
-distances = "./data/distances.csv"
+distances = "data/distances.csv"
+inventory_config = "config/inventory.toml"
+inventory_dir = "data/acoustic/"
 
 [etl.bathymetry]
 bounds = [[-71.0, -68.999], [39.5, 41.601]]
-output_path = "./data/bathy/bathy.hdf5"
+output_path = "data/bathy/bathy.hdf5"
 xres = 800
 yres = 800
+
+[process]
+
+time_ranges = [
+    [
+        "2023-12-01T21:06:55.00",
+        "2023-12-01T21:09:30.00",
+    ],
+    [
+        "2023-12-01T21:09:50.00",
+        "2023-12-01T21:11:20.00",
+    ],
+    [
+        "2023-12-01T21:11:45.00",
+        "2023-12-01T21:16:00.00",
+    ],
+    [
+        "2023-12-01T21:16:15.00",
+        "2023-12-01T21:18:15.00",
+    ],
+    [
+        "2023-12-01T21:18:45.00",
+        "2023-12-01T21:24:55.00",
+    ],
+    [
+        "2023-12-01T21:25:20.00",
+        "2023-12-01T21:31:40.00",
+    ],
+    [
+        "2023-12-01T21:32:00.00",
+        "2023-12-01T21:36:10.00",
+    ],
+    [
+        "2023-12-01T21:36:20.00",
+        "2023-12-01T21:41:20.00",
+    ],
+    [
+        "2023-12-01T21:41:40.00",
+        "2023-12-01T21:45:15.00",
+    ],
+    [
+        "2023-12-01T21:45:30.00",
+        "2023-12-01T21:47:15.00",
+    ],
+    [
+        "2023-12-01T22:16:00.00",
+        "2023-12-01T22:26:00.00",
+    ],
+]
+
+[process.strike]
+
+strike_index = "data/acoustic/strikes/strike_index.csv"
+strike_data = "data/acoustic/strikes/strike_data.h5"
+strike_corr = "data/acoustic/strikes/strike_corr"
+
+[process.strike.find]
+sensors = [
+    { name = "3dvha", channel = 7, distance_s = 1.0, threshold = 0.05 },
+    { name = "vla1", channel = 3, distance_s = 1.0, threshold = 0.05 },
+    { name = "vla2", channel = 0, distance_s = 1.0, threshold = 0.02 },
+]
+taper_pc = 2e-4
+filt_type = "bandpass"
+filt_freq = [100.0, 300.0]
+
+[process.strike.save]
+buffer_start = 0.75
+buffer_end = 0.75
+
+[process.strike.correlation]
+max_workers = 10
+detrend = true
+taper_pc = 0.05
+dec_factor = 20
+filt_type = "bandpass"
+filt_freq = [19.0, 25.0]

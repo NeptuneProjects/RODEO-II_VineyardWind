@@ -8,52 +8,45 @@ This repository depends on the [`rodeo`](https://github.com/NeptuneProjects/RODE
 
 ## Workflow
 
-### Configuration
+The general workflow is as follows:
+```mermaid
+graph TD
+   subgraph "Per-Sensor Processing"
+      A[Construct inventory of acoustic data] --> B[Detect pile driving strikes]
+      B --> C[Extract, process, and save strikes to HDF5 database]
+      C --> D[Compute cross-correlations between strike pairs]
+      D --> E[Build database of templates]
+      E --> G[Denoise the signal using the templates]
+      G --> H[Pulse compress the denoised signals with the whale call]
+      F[Extract templates of whale calls] --> H
+   end
 
-This workflow makes use of a number of configuration files, data sources, etc.
-Additionally, the outputs are numerous and varied.
-Paths are specified in a centralized manner to make it easy to change the location of data files, outputs, etc., and can be found at `config/paths.toml`
 
-Since the workflow is designed to be run either locally or on a remote server, computer-specific paths can be set in the `paths.toml` file.
-To set this up, run the configuration script and specify an alias for the computer you're on:
+   H --> I[Find peaks and compute TDOA estimates]
+   I --> J[Localize the TDOA estimates]
+```
+
+## Configuration
+
+The entire workflow can be configured using two configuration files: `config/config.toml` and `config/inventory.toml`.
+
+`config/config.toml` contains general settings for the workflow, such as paths to data directories, parameters for processing steps, and settings for parallelization.
+`config/inventory.toml` specifies the acoustic data files to be processed and the parameters for processing them.
+
+## Running workflow end-to-end
+
+The entire workflow can be run end-to-end using the command:  
 ```bash
-python src/vineyard/config.py set-id --alias=<your_alias>
-```
-The script will either:
-- Create a new `.env` file in the root directory with your computer identifier and alias if one does not exist.
-- Update the existing `.env` file with your computer identifier and alias if one already exists and the ID and alias are present.
-- Append your computer identifier and alias to the existing `.env` file if one already exists and the ID and alias are not present.
-
-To update the alias, run:
-```bash
-python src/vineyard/config.py set-alias <new_alias>
+workflow --config config/config.toml
 ```
 
-Running the script will also show what paths are set for your computer and whether or not they exist. To view the paths set for your computer, run:
-```bash
-python src/vineyard/config.py
-```
+The optional `--config` flag specifies the path to the configuration file, which contains settings for the workflow.
+If the flag is not provided, the workflow will look for a default configuration file at `config/config.toml`.
 
-With the alias set, the paths in `config/paths.toml` will be updated to point to the correct locations for your computer.
-Ensure the alias is consistent with the headings in the TOML file.
-For example, for three aliases, `work-laptop`, `home-desktop`, and `lab-server`, the paths file could look like this:
-```toml
-[computer.work-laptop]
-data_dir = "D:/Projects/BigData"
-output_dir = "E:/Results"
+## Running individual steps
 
-[computer.home-desktop]
-data_dir = "C:/Users/me/Datasets"
-output_dir = "D:/ProjectOutput"
 
-[computer.lab-server]
-data_dir = "/data/shared/datasets"
-output_dir = "/home/user/results"
-temp_dir = "/tmp/myproject"
-```
-
-If any keys in the computer-specific sections are the same as the default keys, the default values will be overridden.
-
+<!-- 
 ### Construct an inventory of data files.
 
 1. Configure the dataset inventory using the file `config/inventory.toml`.
@@ -65,6 +58,7 @@ If any keys in the computer-specific sections are the same as the default keys, 
    `python scripts/process/strikes_find.py`
 4. Extract, process, and save all strikes to an HDF5 database:  
    `python scripts/process/strikes_save.py`
+   
 5. Compute cross-correlations between all strike pairs:  
    `python scripts/process/strikes_corr.py`
 6. Build database of templates:  
@@ -79,3 +73,4 @@ If any keys in the computer-specific sections are the same as the default keys, 
    `python scripts/process/tdoa_compute.py`
 11. Localize the TDOA estimates:  
     `python scripts/process/tdoa_localize.py`
+-->

@@ -36,6 +36,7 @@ class ETLConfig(BaseModel):
     distances: Path = "data/distances.csv"
     sensor_data: Path | None = None
     inventory_config: Path = "config/inventory.toml"
+    inventory_dir: Path = "data/acoustic"
 
 
 def bathy_etl(config: BathymetryConfig) -> None:
@@ -170,7 +171,7 @@ def inventory_acoustic_data(config_file: Path) -> None:
 def run_etl(config: ETLConfig) -> None:
     bathy_etl(config.bathymetry)
     compute_distances(config.sensor_data, config.distances)
-    # inventory_acoustic_data(config.inventory_config)
+    inventory_acoustic_data(config.inventory_config)
 
 
 def save_bathy_data(
