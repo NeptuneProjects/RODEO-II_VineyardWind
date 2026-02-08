@@ -3,12 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "vineyard_wind"  # Replace with your desired project name
+name = "vineyard_wind" # Replace with your desired project name
 version = "0.0.1"
 description = "A local Python package for project imports"
-authors = [
-    { name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }
-]
+authors = [{ name = "William F. Jenkins", email = "wfjenkins@ucsd.edu" }]
 dependencies = [
     "adaptfilt",
     "basemap",
@@ -26,17 +24,23 @@ dependencies = [
     "numpy",
     "pandas",
     "polars",
+    "pydantic",
     "pymap3d",
     "pyproj",
     "python-dotenv",
     "PyWavelets",
+    "scikit-learn",
     "scipy",
     "seaborn",
+    "torch",
     "tqdm",
     "rodeo",
     "TritonOA",
 ]
 requires-python = ">= 3.12"
+
+[project.scripts]
+workflow = "vineyard.workflow:main"
 
 [tool.uv.sources]
 rodeo = { path = "../core", editable = true }
