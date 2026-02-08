@@ -23,9 +23,12 @@ from pathlib import Path
 import tomllib
 
 import numpy as np
+from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tritonoa.data.time import TIME_PRECISION
 
-from dotenv import load_dotenv
+from vineyard.etl import ETLConfig
+
 
 CONFIG_FILE = Path(__file__).parents[2] / "config" / "paths.toml"
 ENV_FILE = Path(__file__).parents[2] / ".env"
@@ -113,6 +116,27 @@ time_ranges = [
         np.datetime64("2023-12-01T22:26:00.00", TIME_PRECISION),
     ),
 ]
+
+
+class MetadataConfig(BaseModel):
+    """Configuration for sensor metadata."""
+
+    sensor_data: Path = "data/sensors.csv"
+    turbine_data: Path = "data/turbines.csv"
+
+
+class ConfigModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    metadata_config: MetadataConfig = Field(alias="metadata")
+    etl_config: ETLConfig = Field(alias="etl")
+
+    @model_validator(mode="after")
+    def sync_sensor_data(self) -> "ConfigModel":
+        """Set etl_config.sensor_data from metadata_config.sensor_data."""
+        if self.etl_config.sensor_data is None:
+            self.etl_config.sensor_data = self.metadata_config.sensor_data
+        return self
 
 
 def create_path(key: str, exist_ok: bool = True) -> Path:
