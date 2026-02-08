@@ -3,26 +3,14 @@
 # [computer.<name>] sections are paths for specific computers.
 
 [default]
-# Map bounds
-bounds_file = "./config/map_bounds.toml"
-# Bathymetry data
-bathy_data = "./data/bathy/bathy.hdf5"
 # Figures
 figures = "./reports/figures"
 fig_style = "./config/scirep_fig_style.mplstyle"
 # Equipment
-equipment_config = "./config/experiment/equipment.csv"
 distance_lut = "./config/experiment/distances.csv"
-# Acoustic Arrays
-3dvha = "./config/experiment/3dvha.csv"
-vla1_config = "./config/experiment/vla1.csv"
-vla2_config = "./config/experiment/vla2.csv"
 # DAS Location
 das_location_raw = "./data/raw/DAS_final.h5"
 das_location = "./config/experiment/das_location.csv"
-# Turbine Locations
-raw_turbine_data = "./data/turbines.csv"
-turbine_config = "./config/experiment/turbines.csv"
 # Acoustic Data Inventory
 inventory_config = "./config/inventory.toml"
 vla1_inventory = "./data/acoustic/inventory_SHRU905_VLA1.csv"

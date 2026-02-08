@@ -1,0 +1,12 @@
+[metadata]
+sensor_data = "./data/sensors.csv"
+turbine_data = "./data/turbines.csv"
+
+[etl]
+distances = "./data/distances.csv"
+
+[etl.bathymetry]
+bounds = [[-71.0, -68.999], [39.5, 41.601]]
+output_path = "./data/bathy/bathy.hdf5"
+xres = 800
+yres = 800
