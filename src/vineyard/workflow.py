@@ -1,4 +1,6 @@
 #! /usr/bin/env python3
+"""Run workflows with a given configuration."""
+
 import tomllib
 from argparse import ArgumentParser
 from pathlib import Path
@@ -46,7 +48,7 @@ def run_workflow(
 
 def main() -> None:
     """Entry point for the workflow command-line tool."""
-    parser = ArgumentParser(description="Run workflows with a given configuration.")
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
         choices=["run", "etl", "process"],
