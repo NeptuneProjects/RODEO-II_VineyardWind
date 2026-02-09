@@ -110,8 +110,8 @@ class TemplateConfig(BaseModel):
     sensors: list[dict] | None = None
     start_time: str
     end_time: str
-    start_buffer: float = 0.75
-    end_buffer: float = 0.85
+    buffer_start: float = 0.75
+    buffer_end: float = 0.85
     corr_cutoff: float = 0.8
     window_size: int = 20
     plot_dir: Path | None = None
@@ -322,8 +322,8 @@ def _build_sensor_templates(
     corrs: np.ndarray,
     template_data_path: Path,
     name: str,
-    start_buffer: float,
-    end_buffer: float,
+    buffer_start: float,
+    buffer_end: float,
     corr_cutoff: float = 0.9,
     window_size: int = 20,
     plot_dir: Path | None = None,
@@ -335,7 +335,7 @@ def _build_sensor_templates(
 
     num_strikes = len(strike_index)
     # Calculate maximum possible template length
-    max_template_length = int((start_buffer + end_buffer) * ds.stats.sampling_rate) + 1
+    max_template_length = int((buffer_start + buffer_end) * ds.stats.sampling_rate) + 1
 
     # Initialize HDF file and datasets - keep file open during processing
     template_data_path.parent.mkdir(parents=True, exist_ok=True)
@@ -375,8 +375,8 @@ def _build_sensor_templates(
             start_index, end_index = _get_window_inds(
                 ds.stats.sampling_rate,
                 strike_index.item(i, "sample"),
-                start_buffer,
-                end_buffer,
+                buffer_start,
+                buffer_end,
             )
 
             # Use list comprehension instead of remove() to avoid modifying the list
@@ -498,8 +498,8 @@ def build_templates(
             channel,
             config.start_time,
             config.end_time,
-            config.start_buffer,
-            config.end_buffer,
+            config.buffer_start,
+            config.buffer_end,
         )
         _build_sensor_templates(
             ds,
@@ -507,8 +507,8 @@ def build_templates(
             corrs,
             config.template_data,
             name,
-            config.start_buffer,
-            config.end_buffer,
+            config.buffer_start,
+            config.buffer_end,
             corr_cutoff=config.corr_cutoff,
             window_size=config.window_size,
             plot_dir=config.plot_dir,
@@ -629,10 +629,10 @@ def _get_trace(strike_index: pl.DataFrame, ds, idx: int) -> np.ndarray:
 
 
 def _get_window_inds(
-    sampling_rate: float, peak_index: int, start_buffer: float, end_buffer: float
+    sampling_rate: float, peak_index: int, buffer_start: float, buffer_end: float
 ) -> tuple[int, int]:
-    start_index = peak_index - int(start_buffer * sampling_rate)
-    end_index = peak_index + int(end_buffer * sampling_rate)
+    start_index = peak_index - int(buffer_start * sampling_rate)
+    end_index = peak_index + int(buffer_end * sampling_rate)
     return start_index, end_index
 
 
@@ -692,8 +692,8 @@ def _load_strike_data(
     channel: int,
     time_start: np.datetime64,
     time_end: np.datetime64,
-    start_buffer: float,
-    end_buffer: float,
+    buffer_start: float,
+    buffer_end: float,
 ) -> tuple[DataStream, pl.DataFrame, np.ndarray]:
     ds = read_acoustic_data(
         inventory_path / f"inventory_{sensor}.csv",
@@ -706,7 +706,7 @@ def _load_strike_data(
     )
 
     strike_index = (
-        read_strike_index(strike_index_path, start_buffer, end_buffer)
+        read_strike_index(strike_index_path, buffer_start, buffer_end)
         .filter(pl.col("sensor") == sensor)
         .drop(["sensor", "channel"])
     )

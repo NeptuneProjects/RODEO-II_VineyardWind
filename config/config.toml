@@ -78,8 +78,8 @@ filt_type = "bandpass"
 filt_freq = [100.0, 300.0]
 
 [process.strike.save]
-buffer_start = 0.75
-buffer_end = 0.75
+buffer_start = 1.1
+buffer_end = 0.9
 
 [process.strike.correlation]
 max_workers = 10
@@ -106,8 +106,8 @@ sensors = [
 ]
 start_time = "2023-12-01T21:06:00.00"
 end_time = "2023-12-01T22:26:00.00"
-start_buffer = 0.75
-end_buffer = 0.85
+buffer_start = 1.1
+buffer_end = 0.9
 corr_cutoff = 0.8
 window_size = 20
 plot_dir = "reports/figures/strike_templates/"
@@ -118,18 +118,18 @@ template_data = "data/acoustic/templates/whale_templates.h5"
 
 [process.whale_template.calls.3dvha]
 channel = 7
-type1 = { start = "2023-12-01T23:14:28.0", end = "2023-12-01T23:14:29.0" }
-type2 = { start = "2023-12-01T23:14:30.0", end = "2023-12-01T23:14:31.0" }
+type1 = { start = "2023-12-01T23:14:27.7", end = "2023-12-01T23:14:29.2" }
+type2 = { start = "2023-12-01T22:25:46.10", end = "2023-12-01T22:25:47.10" }
 
 [process.whale_template.calls.vla1]
 channel = 3
-type1 = { start = "2023-12-01T23:14:28.0", end = "2023-12-01T23:14:29.0" }
-type2 = { start = "2023-12-01T23:14:30.0", end = "2023-12-01T23:14:31.0" }
+type1 = { start = "2023-12-01T23:14:27.85", end = "2023-12-01T23:14:29.05" }
+type2 = { start = "2023-12-01T22:25:55.52", end = "2023-12-01T22:25:56.90" }
 
 [process.whale_template.calls.vla2]
 channel = 0
-type1 = { start = "2023-12-01T23:14:26.25", end = "2023-12-01T23:14:27.45" }
-type2 = { start = "2023-12-01T23:14:28.0", end = "2023-12-01T23:14:29.0" }
+type1 = { start = "2023-12-01T23:14:26.25", end = "2023-12-01T23:14:28.00" }
+type2 = { start = "2023-12-01T22:25:55.08", end = "2023-12-01T22:25:56.39" }
 
 [process.denoise]
 denoised_data = "data/acoustic/denoised/"
@@ -142,5 +142,5 @@ sensors = [
 ]
 filt_type = "bandpass"
 filt_freq = [19.0, 25.0]
-buffer_start = 0.75
-buffer_end = 0.85
+buffer_start = 1.1
+buffer_end = 0.9
