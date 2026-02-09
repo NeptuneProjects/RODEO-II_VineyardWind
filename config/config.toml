@@ -87,7 +87,7 @@ detrend = true
 taper_pc = 0.05
 dec_factor = 20
 filt_type = "bandpass"
-filt_freq = [19.0, 25.0]
+filt_freq = [15.0, 30.0]
 
 [process.template]
 sensors = [
@@ -108,8 +108,8 @@ start_time = "2023-12-01T21:06:00.00"
 end_time = "2023-12-01T22:26:00.00"
 buffer_start = 1.1
 buffer_end = 0.9
-corr_cutoff = 0.8
-window_size = 20
+corr_cutoff = 0.75
+window_size = 35
 plot_dir = "reports/figures/strike_templates/"
 template_data = "data/acoustic/templates/strike_templates.h5"
 
@@ -141,6 +141,6 @@ sensors = [
     { name = "vla2", channel = 0 },
 ]
 filt_type = "bandpass"
-filt_freq = [19.0, 25.0]
+filt_freq = [15.0, 30.0]
 buffer_start = 1.1
 buffer_end = 0.9

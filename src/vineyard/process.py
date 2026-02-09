@@ -596,7 +596,7 @@ def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -
 
 
 def _get_template_inds(
-    num_signals: int, corrs: np.ndarray, threshold: float = 0.9, window_size: int = 20
+    num_signals: int, corrs: np.ndarray, threshold: float = 0.9, window_size: int = 35
 ) -> list[list[int]]:
     """Get indices of templates for each signal based on correlation matrix.
 
