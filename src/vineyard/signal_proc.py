@@ -4,8 +4,9 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from scipy.signal import find_peaks
+from tqdm import tqdm
 from tritonoa.data.stream import DataStream
 from tritonoa.signal.util import resample_ratio
 
@@ -120,6 +121,26 @@ def convert_to_strain_rate(
         scale_factor * calibration_factor * sampling_rate_hz / gauge_length_m
     )
     return data * conversion_factor
+
+
+def denoise_data(
+    signal: ArrayLike, strike_index, templates, start_samples, end_samples
+) -> tuple[np.ndarray, np.ndarray]:
+    template_signal = np.zeros_like(signal)
+
+    strike_inds = strike_index["strike_index"].to_list()
+    for strike_ind, start_ind, end_ind in tqdm(
+        zip(strike_inds, start_samples, end_samples),
+        desc="Constructing template signal",
+        total=len(strike_inds),
+    ):
+        template = templates[strike_ind]
+        min_length = min(len(template), end_ind - start_ind)
+
+        template_signal[start_ind : start_ind + min_length] += template[:min_length]
+
+    error = signal - template_signal
+    return error, template_signal
 
 
 def inverse_complex_cepstrum(

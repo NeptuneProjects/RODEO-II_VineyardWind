@@ -22,7 +22,6 @@ def run_workflow(config_path: Path) -> ConfigModel:
 
     run_etl(config.etl_config)
     process_data(config.process_config)
-
     return config
 
 

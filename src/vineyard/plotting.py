@@ -22,9 +22,7 @@ import scipy.stats
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
-from vineyard import config
-
-FIG_STYLE = Path(config.get_path("fig_style"))
+FIG_STYLE = Path("config/scirep_fig_style.mplstyle")
 # FONT_PATH = Path("/System/Library/Fonts/HelveticaNeue.ttc")
 plt.style.use(FIG_STYLE)
 

@@ -8,17 +8,43 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
 from numpy.typing import NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
+from scipy.signal import correlate, correlation_lags
 from tqdm import tqdm
 from tritonoa.data.reader import read_hdf5_group
-from tritonoa.data.time import TIME_PRECISION
+from tritonoa.data.stream import DataStream
+from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 from rodeo.utils import compute_array_size, initialize_julia
+from vineyard.plotting import plot_template
 from vineyard.readers import read_acoustic_data, read_strike_index
-from vineyard.signal_proc import find_strikes, process_datastream
+from vineyard.signal_proc import find_strikes, denoise_data, process_datastream
+
+
+class DenoiseConfig(BaseModel):
+    denoised_data: Path = "data/acoustic/denoised"
+    start: str
+    end: str
+    sensors: list[dict] | None = None
+    detrend: bool | None = None
+    taper_pc: float | None = None
+    dec_factor: int | None = None
+    filt_type: str = "bandpass"
+    filt_freq: float | Sequence[float] = [19.0, 25.0]
+    buffer_start: float = 0.75
+    buffer_end: float = 0.85
+
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "DenoiseConfig":
+        """Convert start and end from strings to numpy datetime64."""
+        self.start = np.datetime64(self.start, TIME_PRECISION)
+        self.end = np.datetime64(self.end, TIME_PRECISION)
+        return self
 
 
 class StrikeCorrConfig(BaseModel):
@@ -78,22 +104,71 @@ class StrikeConfig(BaseModel):
         return config
 
 
+class TemplateConfig(BaseModel):
+    """Configuration for the template-building process."""
+
+    sensors: list[dict] | None = None
+    start_time: str
+    end_time: str
+    start_buffer: float = 0.75
+    end_buffer: float = 0.85
+    corr_cutoff: float = 0.8
+    window_size: int = 20
+    plot_dir: Path | None = None
+    template_data: Path = "data/acoustic/templates/strike_templates.h5"
+
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "TemplateConfig":
+        """Convert start_time and end_time from strings to numpy datetime64."""
+        self.start_time = np.datetime64(self.start_time, TIME_PRECISION)
+        self.end_time = np.datetime64(self.end_time, TIME_PRECISION)
+        return self
+
+
+class WhaleTemplateConfig(BaseModel):
+    """Configuration for whale call templates.
+
+    Structure: calls[sensor][type] -> {start: datetime, end: datetime}
+    Example: calls["3dvha"]["type1"]["start"]
+    """
+
+    template_data: Path
+    calls: dict[str, dict[str, int | dict[str, str]]]
+
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "WhaleTemplateConfig":
+        """Convert start and end times from strings to numpy datetime64."""
+        for sensor_calls in self.calls.values():
+            for key, value in sensor_calls.items():
+                # Skip non-dict fields like 'channel'
+                if isinstance(value, dict) and "start" in value and "end" in value:
+                    value["start"] = np.datetime64(value["start"], TIME_PRECISION)
+                    value["end"] = np.datetime64(value["end"], TIME_PRECISION)
+        return self
+
+
 class ProcessConfig(BaseModel):
     """Configuration for the strike-finding process."""
 
     inventory_path: Path | None = None
     time_ranges: list[list[str]] | None = None
     strike_config: StrikeConfig = Field(alias="strike")
+    template_config: TemplateConfig = Field(alias="template")
+    whale_template_config: WhaleTemplateConfig | None = Field(alias="whale_template")
+    denoise_config: DenoiseConfig | None = Field(alias="denoise")
 
-    def get_time_ranges_as_datetime(self) -> list[tuple[np.datetime64, np.datetime64]]:
-        """Convert time_ranges from strings to numpy datetime64 tuples."""
-        return [
-            (
-                np.datetime64(start, TIME_PRECISION),
-                np.datetime64(end, TIME_PRECISION),
-            )
-            for start, end in self.time_ranges
-        ]
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "ProcessConfig":
+        """Convert time_ranges from lists of strings to lists of numpy datetime64 tuples."""
+        if self.time_ranges is not None:
+            self.time_ranges = [
+                (
+                    np.datetime64(start, TIME_PRECISION),
+                    np.datetime64(end, TIME_PRECISION),
+                )
+                for start, end in self.time_ranges
+            ]
+        return self
 
 
 @dataclass
@@ -241,37 +316,406 @@ def build_strikes_df(
     logging.info(f"Strikes extracted and saved to {config.strike_index}.")
 
 
-def xcorr_strike_pairs(
-    config: StrikeCorrConfig, strike_data_path: Path, output_path: Path
+def _build_sensor_templates(
+    ds,
+    strike_index: pl.DataFrame,
+    corrs: np.ndarray,
+    template_data_path: Path,
+    name: str,
+    start_buffer: float,
+    end_buffer: float,
+    corr_cutoff: float = 0.9,
+    window_size: int = 20,
+    plot_dir: Path | None = None,
+    ylim: tuple[float, float] | None = None,
 ) -> None:
-    """Compute the cross-correlation of strike pairs for each sensor and save
-    the results.
+    all_template_inds = _get_template_inds(
+        strike_index.shape[0], corrs, threshold=corr_cutoff, window_size=window_size
+    )
 
-    The results for each sensor are saved to the output HDF5 file in the
-    following format:
-    ```
-    /sensor
-        /time_diff
-        /corr
-    ```
-    `time_diff` and `corr` are 2D arrays with the shape `(num_detections, num_detections)`.
+    num_strikes = len(strike_index)
+    # Calculate maximum possible template length
+    max_template_length = int((start_buffer + end_buffer) * ds.stats.sampling_rate) + 1
+
+    # Initialize HDF file and datasets - keep file open during processing
+    template_data_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with h5py.File(template_data_path, "a") as f:
+        if name in f:
+            logging.warning(
+                f"Group {name} already exists in template_data. Overwriting."
+            )
+            del f[name]
+        g = f.create_group(name)
+        g.attrs["sampling_rate"] = ds.stats.sampling_rate
+        g.create_dataset("start_sample", shape=(num_strikes,), dtype=int)
+        g.create_dataset("end_sample", shape=(num_strikes,), dtype=int)
+        g.create_dataset(
+            "data",
+            shape=(num_strikes, max_template_length),
+            dtype=float,
+            fillvalue=np.nan,
+        )
+
+        template = None
+        previous_template_inds = []
+        traces = None
+
+        # Helper function to extract a trace on-demand
+
+        for i in tqdm(
+            range(num_strikes),
+            desc=f"Processing {name}",
+            total=num_strikes,
+            unit="strike",
+        ):
+            # Load trace based on mode
+            reference_trace = _get_trace(strike_index, ds, i)
+
+            start_index, end_index = _get_window_inds(
+                ds.stats.sampling_rate,
+                strike_index.item(i, "sample"),
+                start_buffer,
+                end_buffer,
+            )
+
+            # Use list comprehension instead of remove() to avoid modifying the list
+            template_inds = [idx for idx in all_template_inds[i] if idx != i]
+
+            # Case 1: No templates found, and no previous template
+            # Action: Use the reference trace as the template
+            if len(template_inds) < 1 and template is None:
+                logging.warning(
+                    f"Strike {i} has no templates. Using reference trace as template."
+                )
+                template_inds = [i]
+                traces = np.atleast_2d(reference_trace)
+                template = reference_trace
+            # Case 2: No templates found, but previous template exists
+            # Action: Use the previous template
+            elif len(template_inds) < 5:
+                logging.warning(
+                    f"Strike {i} has insufficient candidates. Using previous template."
+                )
+                template_inds = previous_template_inds.copy()
+                tmp_traces, tmp_ref = _enforce_same_size([traces, reference_trace])
+                template = np.median(
+                    np.hstack([tmp_traces, tmp_ref[:, np.newaxis]]), axis=1
+                )
+            # Case 3: Templates found
+            # Action: Generate a new template from the reference trace and the templates
+            else:
+                traces = [reference_trace]
+                for j in template_inds:
+                    # Load trace based on mode
+                    tr = _get_trace(strike_index, ds, j)
+                    fs = ds.stats.sampling_rate
+
+                    xcorr = correlate(reference_trace, tr, mode="same")
+                    lags = correlation_lags(len(reference_trace), len(tr), mode="same")
+                    peak_lag = lags[np.argmax(xcorr)]
+
+                    dt = np.timedelta64(
+                        int(peak_lag / fs * TIME_CONVERSION_FACTOR), TIME_PRECISION
+                    )
+
+                    corrected_template_start = (
+                        np.datetime64(strike_index.item(j, "start_time")) - dt
+                    )
+                    corrected_template_end = (
+                        np.datetime64(strike_index.item(j, "end_time")) - dt
+                    )
+
+                    # Need to extract from datastream at corrected times
+                    # (can't use pre-extracted traces here as times are shifted)
+                    template_tr = (
+                        ds.copy()
+                        .trim(
+                            starttime=corrected_template_start,
+                            endtime=corrected_template_end,
+                        )
+                        .data[0]
+                    )
+
+                    traces.append(template_tr)
+
+                traces = np.array(_enforce_same_size(traces)).T
+                template = np.median(traces, axis=1)
+                previous_template_inds = template_inds.copy()
+
+            template_length = len(template)
+            if template_length < max_template_length:
+                padded_template = np.full(max_template_length, np.nan)
+                padded_template[:template_length] = template
+            else:
+                padded_template = template[:max_template_length]
+
+            g["data"][i, :] = padded_template
+            g["start_sample"][i] = start_index
+            g["end_sample"][i] = end_index
+
+            if plot_dir:
+                print_corrs = ", ".join(
+                    [
+                        f"{x:.2f}"
+                        for x in np.atleast_1d(corrs[i, template_inds]).tolist()
+                    ]
+                )
+                title = (
+                    f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
+                    f"Template Indices: {template_inds}\nMax Corr: [{print_corrs}]"
+                )
+                savepath = plot_dir / name
+                savepath.mkdir(parents=True, exist_ok=True)
+                fig = plot_template(traces, template, title=title, ylim=ylim)
+                fig.savefig(
+                    savepath / f"{name}_strike_{i:04d}_template.png",
+                    dpi=200,
+                    bbox_inches="tight",
+                )
+                plt.close(fig)
+
+    logging.info(f"Templates for {name.upper()} saved to {template_data_path}")
+
+
+def build_templates(
+    config: TemplateConfig,
+    inventory_path: Path,
+    strike_index_path: Path,
+    strike_corr_path: Path,
+) -> None:
+    for sensor in config.sensors:
+        name = sensor["name"]
+        channel = sensor["channel"]
+        ylim = sensor["ylim"]
+        logging.info(f"Processing sensor: {name} channel {channel}.")
+
+        ds, strike_index, corrs = _load_strike_data(
+            inventory_path,
+            strike_index_path,
+            strike_corr_path,
+            name,
+            channel,
+            config.start_time,
+            config.end_time,
+            config.start_buffer,
+            config.end_buffer,
+        )
+        _build_sensor_templates(
+            ds,
+            strike_index,
+            corrs,
+            config.template_data,
+            name,
+            config.start_buffer,
+            config.end_buffer,
+            corr_cutoff=config.corr_cutoff,
+            window_size=config.window_size,
+            plot_dir=config.plot_dir,
+            ylim=ylim,
+        )
+
+
+def denoise_strikes(
+    config: DenoiseConfig,
+    inventory_path: Path,
+    strike_index_path: Path,
+    template_path: Path,
+) -> None:
+    for sensor in config.sensors:
+        ds, strike_index, templates, start_samples, end_samples = _load_denoise_data(
+            inventory_path / f"inventory_{sensor['name']}.csv",
+            strike_index_path,
+            template_path,
+            sensor["name"],
+            sensor["channel"],
+            config.start,
+            config.end,
+            taper_pc=config.taper_pc,
+            dec_factor=config.dec_factor,
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
+            buffer_start=config.buffer_start,
+            buffer_end=config.buffer_end,
+        )
+        x_filtered, y = denoise_data(
+            ds.data[0],
+            strike_index,
+            templates,
+            start_samples,
+            end_samples,
+        )
+
+        ds.data = np.vstack((ds.data[0], x_filtered, y))
+        ds.stats.channels = [0, 1, 2]
+        ds.stats.metadata = {
+            "sensor": sensor["name"],
+            "channel": sensor["channel"],
+            "channel_names": {
+                0: "Original Signal",
+                1: "Filtered Signal",
+                2: "Rejected Signal",
+            },
+        }
+        save_dir = config.denoised_data
+        save_dir.mkdir(parents=True, exist_ok=True)
+        ds.write_hdf5(save_dir / f"{sensor['name']}.h5")
+
+
+def _enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
+    """Ensure all arrays in the list have the same size by padding with NaNs."""
+    max_length = max(arr.shape[0] for arr in arrays)
+    return [
+        np.pad(arr, (0, max_length - arr.shape[0]), constant_values=np.nan)
+        for arr in arrays
+    ]
+
+
+def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -> None:
+    with h5py.File(config.template_data, "w") as f:
+        for sensor_name, sensor_data in config.calls.items():
+            channel = sensor_data.pop("channel")
+            for call_type, call_times in sensor_data.items():
+                time_start = call_times["start"]
+                time_end = call_times["end"]
+                template = read_acoustic_data(
+                    inventory_path / f"inventory_{sensor_name}.csv",
+                    time_start,
+                    time_end,
+                    channels=channel,
+                    taper_pc=0.25,
+                    filt_type="bandpass",
+                    filt_freq=[19.0, 25.0],
+                ).taper(max_percentage=0.25)
+
+                g = f.create_group(f"{sensor_name}_{call_type}")
+                template.create_hdf5_dataset(g)
+                logging.info(
+                    f"Saved template for whale {call_type} on {sensor_name} to {config.template_data}"
+                )
+
+
+def _get_template_inds(
+    num_signals: int, corrs: np.ndarray, threshold: float = 0.9, window_size: int = 20
+) -> list[list[int]]:
+    """Get indices of templates for each signal based on correlation matrix.
 
     Args:
-        config: StrikeCorrConfig instance containing the configuration for cross-correlation.
-        strike_data_path: Path to the input HDF5 file containing the strike data.
-        output_path: Path to the output HDF5 file where the results will be saved.
+        num_signals (int): Number of signals.
+        corrs (np.ndarray): Correlation matrix.
+        threshold (float): Correlation threshold to consider as template.
+        window_size (int): Number of signals to consider on each side.
+
+    Returns:
+        list[list[int]]: List of lists containing template indices for each signal.
     """
-    os.environ["JULIA_NUM_THREADS"] = str(config.max_workers)
-    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
-    with h5py.File(strike_data_path, "r") as file:
-        for sensor, sensor_group in file.items():
-            logging.info(f"Processing sensor {sensor.upper()}.")
-            record = xcorr_sensor(
-                sensor, sensor_group, config.model_dump(exclude={"max_workers"})
-            )
-            record.save_h5(output_path)
-            logging.info(f"Processed sensor {sensor.upper()}.")
-    return
+    # Create a mask for the window constraint (vectorized)
+    row_idx, col_idx = np.meshgrid(
+        np.arange(num_signals), np.arange(num_signals), indexing="ij"
+    )
+    window_mask = np.abs(row_idx - col_idx) <= window_size
+
+    # Apply correlation threshold and window mask
+    valid_mask = (corrs > threshold) & window_mask
+
+    # Extract indices for each row
+    return [np.where(valid_mask[i])[0].tolist() for i in range(num_signals)]
+
+
+def _get_trace(strike_index: pl.DataFrame, ds, idx: int) -> np.ndarray:
+    ref_start = np.datetime64(strike_index.item(idx, "start_time"))
+    ref_end = np.datetime64(strike_index.item(idx, "end_time"))
+    return ds.copy().trim(starttime=ref_start, endtime=ref_end).data[0]
+
+
+def _get_window_inds(
+    sampling_rate: float, peak_index: int, start_buffer: float, end_buffer: float
+) -> tuple[int, int]:
+    start_index = peak_index - int(start_buffer * sampling_rate)
+    end_index = peak_index + int(end_buffer * sampling_rate)
+    return start_index, end_index
+
+
+def _load_denoise_data(
+    inventory_path: Path,
+    strike_index_path: Path,
+    template_path: Path,
+    sensor: str,
+    channel: int,
+    start: np.datetime64,
+    end: np.datetime64,
+    taper_pc: float | None = None,
+    dec_factor: int | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    buffer_start: float = 0.75,
+    buffer_end: float = 0.85,
+) -> tuple[DataStream, pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    ds = read_acoustic_data(
+        inventory_path,
+        start,
+        end,
+        channels=channel,
+        taper_pc=taper_pc,
+        dec_factor=dec_factor,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+    )
+
+    strike_index = (
+        read_strike_index(strike_index_path, buffer_start, buffer_end)
+        .filter(pl.col("sensor") == sensor)
+        .drop(["sensor", "channel"])
+    )
+
+    with h5py.File(template_path, "r") as f:
+        g = f.get(sensor)
+        template_fs = g.attrs["sampling_rate"]
+        templates = g["data"][:]
+        start_samples = g["start_sample"][:]
+        end_samples = g["end_sample"][:]
+
+    if template_fs != ds.stats.sampling_rate:
+        raise ValueError(
+            f"Template sampling rate {template_fs} does not match "
+            f"data sampling rate {ds.stats.sampling_rate}"
+        )
+
+    return ds, strike_index, templates, start_samples, end_samples
+
+
+def _load_strike_data(
+    inventory_path: Path,
+    strike_index_path: Path,
+    strike_corr_path: Path,
+    sensor: str,
+    channel: int,
+    time_start: np.datetime64,
+    time_end: np.datetime64,
+    start_buffer: float,
+    end_buffer: float,
+) -> tuple[DataStream, pl.DataFrame, np.ndarray]:
+    ds = read_acoustic_data(
+        inventory_path / f"inventory_{sensor}.csv",
+        time_start,
+        time_end,
+        channels=channel,
+        dec_factor=None,
+        filt_type="bandpass",
+        filt_freq=[19.0, 25.0],
+    )
+
+    strike_index = (
+        read_strike_index(strike_index_path, start_buffer, end_buffer)
+        .filter(pl.col("sensor") == sensor)
+        .drop(["sensor", "channel"])
+    )
+
+    with h5py.File(strike_corr_path, "r") as f:
+        group = f[sensor]
+        corrs = group["corr"][:]
+
+    return ds, strike_index, corrs
 
 
 def process_data(config: ProcessConfig) -> None:
@@ -281,16 +725,29 @@ def process_data(config: ProcessConfig) -> None:
         config: ProcessConfig instance containing the configuration for
             data processing.
     """
-    # build_strikes_df(
-    #     config.strike_config,
-    #     config.get_time_ranges_as_datetime(),
-    #     config.inventory_path,
-    # )
-    # save_strikes(config.strike_config, config.inventory_path)
+    build_strikes_df(
+        config.strike_config,
+        config.time_ranges,
+        config.inventory_path,
+    )
+    save_strikes(config.strike_config, config.inventory_path)
     xcorr_strike_pairs(
         config.strike_config.strike_corr_config,
         config.strike_config.strike_data,
         config.strike_config.strike_corr,
+    )
+    build_templates(
+        config.template_config,
+        config.inventory_path,
+        config.strike_config.strike_index,
+        config.strike_config.strike_corr,
+    )
+    extract_whale_templates(config.whale_template_config, config.inventory_path)
+    denoise_strikes(
+        config.denoise_config,
+        config.inventory_path,
+        config.strike_config.strike_index,
+        config.template_config.template_data,
     )
 
 
@@ -409,3 +866,36 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
         time_diff=time_diff,
         corr=max_corr,
     )
+
+
+def xcorr_strike_pairs(
+    config: StrikeCorrConfig, strike_data_path: Path, output_path: Path
+) -> None:
+    """Compute the cross-correlation of strike pairs for each sensor and save
+    the results.
+
+    The results for each sensor are saved to the output HDF5 file in the
+    following format:
+    ```
+    /sensor
+        /time_diff
+        /corr
+    ```
+    `time_diff` and `corr` are 2D arrays with the shape `(num_detections, num_detections)`.
+
+    Args:
+        config: StrikeCorrConfig instance containing the configuration for cross-correlation.
+        strike_data_path: Path to the input HDF5 file containing the strike data.
+        output_path: Path to the output HDF5 file where the results will be saved.
+    """
+    os.environ["JULIA_NUM_THREADS"] = str(config.max_workers)
+    os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
+    with h5py.File(strike_data_path, "r") as file:
+        for sensor, sensor_group in file.items():
+            logging.info(f"Processing sensor {sensor.upper()}.")
+            record = xcorr_sensor(
+                sensor, sensor_group, config.model_dump(exclude={"max_workers"})
+            )
+            record.save_h5(output_path)
+            logging.info(f"Processed sensor {sensor.upper()}.")
+    return

@@ -47,26 +47,6 @@ If the flag is not provided, the workflow will look for a default configuration 
 
 
 <!-- 
-### Construct an inventory of data files.
-
-1. Configure the dataset inventory using the file `config/inventory.toml`.
-2. Build the dataset inventory by running:  
-   `python scripts/setup/acoustic_inventory.py`  
-   The inventory is performed for each station, and saved as:  
-   `data/inventory/inventory_SHRU905_VLA1.csv`
-3. Detect pile driving strikes in the acoustic data by running:  
-   `python scripts/process/strikes_find.py`
-4. Extract, process, and save all strikes to an HDF5 database:  
-   `python scripts/process/strikes_save.py`
-   
-5. Compute cross-correlations between all strike pairs:  
-   `python scripts/process/strikes_corr.py`
-6. Build database of templates:  
-   `python scripts/process/template_extraction.py`
-7. Extract templates of the whale calls:  
-   `python scripts/process/whale_extract.py`
-8. Denoise the signal using the templates:  
-   `python scripts/process/denoise.py`
 9. Pulse compress the denoised signals with the whale call:  
    `python scripts/process/denoised_pulse_compression.py`
 10. Find peaks and compute TDOA estimates:  
