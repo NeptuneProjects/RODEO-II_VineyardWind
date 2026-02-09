@@ -21,7 +21,11 @@ from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-from vineyard.signal import convert_to_strain_rate, process_datastream, subtract_median
+from vineyard.signal_proc import (
+    convert_to_strain_rate,
+    process_datastream,
+    subtract_median,
+)
 
 
 @dataclass(frozen=True)
@@ -146,11 +150,6 @@ def read_bathymetry(
     return data, lonvec, latvec
 
 
-def read_bbox(fname: Path, key: str) -> list[list[float]]:
-    with open(fname, "rb") as f:
-        return tomllib.load(f)[key]
-
-
 def read_das_array_properties(file: Path) -> DASArrayProperties:
     tdms_properties = read_tdms_properties(file)
     return DASArrayProperties.from_dict(tdms_properties)
@@ -195,7 +194,7 @@ def read_sensor_locations(file: Path) -> pd.DataFrame:
 
 def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> DataFrame:
     """Read the strike index from a CSV file and apply time buffers.
-    
+
     Args:
         index (Path): Path to the CSV file containing the strike index.
         buffer_start (float): Buffer time in seconds to subtract from the peak time.
