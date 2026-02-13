@@ -149,13 +149,14 @@ def construct_template_signal(
         desc="Constructing template signal",
         total=len(strike_inds),
     ):
-        import matplotlib.pyplot as plt
-
         template = templates[strike_ind]
 
         # Handle overlap by trimming template from the beginning, not shifting position
+        # However, if the previous placement would consume the entire current window
+        # (likely due to noise), trust the current index and place it normally
         template_offset = 0
-        if start_ind < previous_end:
+        if start_ind < previous_end < end_ind:
+            # Normal overlap: trim from beginning
             template_offset = previous_end - start_ind
             start_ind = previous_end
 
