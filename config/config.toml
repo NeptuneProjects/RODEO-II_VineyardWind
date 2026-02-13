@@ -101,8 +101,8 @@ sensors = [
         2.5e-7,
     ] },
     { name = "vla2", channel = 0, ylim = [
-        -4.0e-8,
-        4.0e-8,
+        -1.5e-7,
+        1.5e-7,
     ] },
 ]
 buffer_start = 0.8
