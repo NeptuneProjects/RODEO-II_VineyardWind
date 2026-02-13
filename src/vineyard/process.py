@@ -13,9 +13,9 @@ import numpy as np
 import polars as pl
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
-from scipy.signal import correlate, correlation_lags
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process
+from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 import vineyard.readers as readers
@@ -388,10 +388,6 @@ def _build_sensor_templates_rolling(
 ) -> None:
     """Build templates using a rolling median window with iterative refinement.
 
-    Uses a two-step alignment process for robust template estimation:
-    1. Initial alignment: Uses pairwise shift matrix to compute robust consensus alignments
-    2. Refinement: Computes initial template, then re-aligns all traces to that template
-
     This iterative approach combines the robustness of consensus alignment with the
     precision of template-based alignment, ensuring all traces align to the same
     waveform features. For each strike i, the template is computed from strikes
@@ -413,23 +409,6 @@ def _build_sensor_templates_rolling(
     max_template_length = int((buffer_start + buffer_end) * ds.stats.sampling_rate)
     half_window = window_size // 2
     fs = ds.stats.sampling_rate
-
-    # Helper function to extract trace by sample indices (avoids ds.copy())
-    def extract_trace_efficient(
-        start_time: np.datetime64, end_time: np.datetime64
-    ) -> np.ndarray:
-        """Extract trace from datastream using direct array indexing."""
-        # Convert times to sample indices
-        start_sample = int(
-            (start_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs
-        )
-        end_sample = int((end_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
-
-        # Clip to valid range
-        start_sample = max(0, start_sample)
-        end_sample = min(ds.num_samples, end_sample)
-
-        return ds.data[0, start_sample:end_sample]
 
     # Initialize HDF file and datasets
     template_data_path.parent.mkdir(parents=True, exist_ok=True)
@@ -480,7 +459,8 @@ def _build_sensor_templates_rolling(
                 window_start:window_end, window_start:window_end
             ]
             anchor_index = _get_anchor_trace(corr_matrix_window)
-            anchor_trace = extract_trace_efficient(
+            anchor_trace = _extract_trace(
+                ds,
                 np.datetime64(
                     strike_index.item(template_inds[anchor_index], "start_time")
                 ),
@@ -497,11 +477,12 @@ def _build_sensor_templates_rolling(
                 if idx == anchor_index:
                     aligned_tr = anchor_trace
                 else:
-                    tr = extract_trace_efficient(tr_start, tr_end)
+                    tr = _extract_trace(ds, tr_start, tr_end)
                     shift_samples = sample_delay(anchor_trace, tr)
                     shift_seconds = shift_samples / fs
 
-                    aligned_tr = extract_trace_efficient(
+                    aligned_tr = _extract_trace(
+                        ds,
                         tr_start
                         - np.timedelta64(
                             int(shift_seconds * TIME_CONVERSION_FACTOR), TIME_PRECISION
@@ -579,6 +560,17 @@ def denoise_strikes(
     strike_index_path: Path,
     template_path: Path,
 ) -> None:
+    """Denoise strike data for each sensor using the provided templates and
+    strike indices.
+
+    Args:
+        config: DenoiseConfig instance containing the configuration for denoising.
+        start_time: Start time of the time range to process.
+        end_time: End time of the time range to process.
+        inventory_path: Path to the inventory CSV files for the sensors.
+        strike_index_path: Path to the CSV file containing strike indices.
+        template_path: Path to the HDF5 file containing templates for each sensor.
+    """
     for sensor in config.sensors:
         ds, strike_index, templates, start_samples, end_samples = (
             readers.read_denoise_data(
@@ -629,6 +621,30 @@ def _enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
         np.pad(arr, (0, max_length - arr.shape[0]), constant_values=0.0)
         for arr in arrays
     ]
+
+
+def _extract_trace(
+    ds: DataStream, start_time: np.datetime64, end_time: np.datetime64
+) -> np.ndarray:
+    """Extract trace from datastream using direct array indexing.
+
+    Args:
+        ds: DataStream containing the acoustic data.
+        start_time: Start time of the trace to extract.
+        end_time: End time of the trace to extract.
+    Returns:
+        Extracted trace data.
+    """
+    # Convert times to sample indices
+    fs = ds.stats.sampling_rate
+    start_sample = int((start_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
+    end_sample = int((end_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
+
+    # Clip to valid range
+    start_sample = max(0, start_sample)
+    end_sample = min(ds.num_samples, end_sample)
+
+    return ds.data[0, start_sample:end_sample]
 
 
 def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -> None:
@@ -696,12 +712,6 @@ def _get_template_inds(
 
     # Extract indices for each row
     return [np.where(valid_mask[i])[0].tolist() for i in range(num_signals)]
-
-
-def _get_trace(strike_index: pl.DataFrame, ds, idx: int) -> np.ndarray:
-    ref_start = np.datetime64(strike_index.item(idx, "start_time"))
-    ref_end = np.datetime64(strike_index.item(idx, "end_time"))
-    return ds.copy().trim(starttime=ref_start, endtime=ref_end).data[0]
 
 
 def _get_window_inds(
