@@ -1,12 +1,15 @@
 """Module for common signal processing functions used in the project."""
 
 from collections.abc import Sequence
+from curses import window
 from typing import Any
 
 import numpy as np
+import polars as pl
 from numpy.typing import ArrayLike, NDArray
-from scipy.signal import find_peaks
+from scipy.signal import correlate, correlation_lags, find_peaks
 from tqdm import tqdm
+from tritonoa.data.signal import taper
 from tritonoa.data.stream import DataStream
 from tritonoa.signal.util import resample_ratio
 
@@ -110,6 +113,69 @@ def complex_cepstrum(
     return ceps, ndelay
 
 
+def construct_template_signal(
+    signal: ArrayLike,
+    strike_inds: list[int],
+    templates: list[NDArray[np.float64]],
+    start_samples: list[int],
+    end_samples: list[int],
+    taper_pc: float | None = None,
+) -> np.ndarray:
+    """Construct a template signal by placing templates at the given strike
+    indices.
+
+    This function handles overlapping templates by trimming the template
+    from the beginning, ensuring that the strike indices remain consistent
+    with the original signal.
+
+    Args:
+        signal: The original signal to which the templates will be added.
+        strike_inds: List of indices corresponding to the strikes in the signal.
+        templates: List of template signals corresponding to each strike index.
+        start_samples: List of start sample indices for each template.
+        end_samples: List of end sample indices for each template.
+        taper_pc: Optional percentage for tapering the templates to reduce
+            edge effects.
+
+    Returns:
+        A signal constructed by adding the templates at the specified strike
+            indices, with handling for overlapping templates.
+    """
+    template_signal = np.zeros_like(signal)
+    previous_end = 0
+
+    for strike_ind, start_ind, end_ind in tqdm(
+        zip(strike_inds, start_samples, end_samples),
+        desc="Constructing template signal",
+        total=len(strike_inds),
+    ):
+        import matplotlib.pyplot as plt
+
+        template = templates[strike_ind]
+
+        # Handle overlap by trimming template from the beginning, not shifting position
+        template_offset = 0
+        if start_ind < previous_end:
+            template_offset = previous_end - start_ind
+            start_ind = previous_end
+
+        # Apply offset to skip overlapping part of template
+        template = template[template_offset:]
+
+        min_length = min(len(template), end_ind - start_ind)
+        updated_template = template[:min_length]
+        window = (
+            taper(len(updated_template), max_percentage=taper_pc)
+            if taper_pc is not None
+            else np.ones(len(updated_template))
+        )
+
+        template_signal[start_ind : start_ind + min_length] += updated_template * window
+        previous_end = start_ind + min_length
+
+    return template_signal
+
+
 def convert_to_strain_rate(
     data: NDArray[np.float64],
     scale_factor: float,
@@ -124,21 +190,17 @@ def convert_to_strain_rate(
 
 
 def denoise_data(
-    signal: ArrayLike, strike_index, templates, start_samples, end_samples
+    signal: ArrayLike,
+    strike_index: pl.DataFrame,
+    templates: list[NDArray[np.float64]],
+    start_samples: list[int],
+    end_samples: list[int],
+    taper_pc: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    template_signal = np.zeros_like(signal)
-
     strike_inds = strike_index["strike_index"].to_list()
-    for strike_ind, start_ind, end_ind in tqdm(
-        zip(strike_inds, start_samples, end_samples),
-        desc="Constructing template signal",
-        total=len(strike_inds),
-    ):
-        template = templates[strike_ind]
-        min_length = min(len(template), end_ind - start_ind)
-
-        template_signal[start_ind : start_ind + min_length] += template[:min_length]
-
+    template_signal = construct_template_signal(
+        signal, strike_inds, templates, start_samples, end_samples, taper_pc=taper_pc
+    )
     error = signal - template_signal
     return error, template_signal
 
@@ -306,3 +368,19 @@ def roll_and_pad(data: NDArray, shift: int, fill: Any = 0.0, axis: int = -1) -> 
     elif shift < 0:
         shifted_data[shift:] = fill
     return shifted_data
+
+
+def sample_delay(sig1: NDArray, sig2: NDArray) -> int:
+    """Calculate the sample delay between two signals using cross-correlation.
+
+    Args:
+        sig1: First signal.
+        sig2: Second signal.
+
+    Returns:
+        Time delay in seconds between the two signals.
+    """
+    xcorr = correlate(sig1, sig2, mode="same")
+    lags = correlation_lags(len(sig1), len(sig2), mode="same")
+    peak_lag = lags[np.argmax(xcorr)]
+    return peak_lag

@@ -11,25 +11,21 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-from numpy.typing import NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
 from scipy.signal import correlate, correlation_lags
 from tqdm import tqdm
-from tritonoa.data.reader import read_hdf5_group
-from tritonoa.data.stream import DataStream
+from tritonoa.data.reader import read_and_process
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.plotting import plot_template
-from vineyard.readers import read_acoustic_data, read_strike_index
-from vineyard.signal_proc import find_strikes, denoise_data, process_datastream
+from vineyard.signal_proc import denoise_data, find_strikes, sample_delay
 
 
 class DenoiseConfig(BaseModel):
     denoised_data: Path = "data/acoustic/denoised"
-    start: str
-    end: str
     sensors: list[dict] | None = None
     detrend: bool | None = None
     taper_pc: float | None = None
@@ -38,20 +34,14 @@ class DenoiseConfig(BaseModel):
     filt_freq: float | Sequence[float] = [19.0, 25.0]
     buffer_start: float = 0.75
     buffer_end: float = 0.85
-
-    @model_validator(mode="after")
-    def convert_to_np_datetime(self) -> "DenoiseConfig":
-        """Convert start and end from strings to numpy datetime64."""
-        self.start = np.datetime64(self.start, TIME_PRECISION)
-        self.end = np.datetime64(self.end, TIME_PRECISION)
-        return self
+    template_taper_pc: float = 0.05
 
 
 class StrikeCorrConfig(BaseModel):
     max_workers: int = 10
     detrend: bool = True
     taper_pc: float = 0.05
-    dec_factor: int = 20
+    dec_factor: int | None = None
     filt_type: str | None = "bandpass"
     filt_freq: float | Sequence[float] | None = [19.0, 25.0]
 
@@ -108,21 +98,16 @@ class TemplateConfig(BaseModel):
     """Configuration for the template-building process."""
 
     sensors: list[dict] | None = None
-    start_time: str
-    end_time: str
     buffer_start: float = 0.75
     buffer_end: float = 0.85
+    taper_pc: float | None = None
+    dec_factor: int | None = None
+    filt_type: str | None = None
+    filt_freq: float | Sequence[float] | None = None
     corr_cutoff: float = 0.8
     window_size: int = 20
     plot_dir: Path | None = None
     template_data: Path = "data/acoustic/templates/strike_templates.h5"
-
-    @model_validator(mode="after")
-    def convert_to_np_datetime(self) -> "TemplateConfig":
-        """Convert start_time and end_time from strings to numpy datetime64."""
-        self.start_time = np.datetime64(self.start_time, TIME_PRECISION)
-        self.end_time = np.datetime64(self.end_time, TIME_PRECISION)
-        return self
 
 
 class WhaleTemplateConfig(BaseModel):
@@ -133,6 +118,9 @@ class WhaleTemplateConfig(BaseModel):
     """
 
     template_data: Path
+    filt_type: str | None = None
+    filt_freq: float | Sequence[float] | None = None
+    taper_pc: float | None = None
     calls: dict[str, dict[str, int | dict[str, str]]]
 
     @model_validator(mode="after")
@@ -151,6 +139,8 @@ class ProcessConfig(BaseModel):
     """Configuration for the strike-finding process."""
 
     inventory_path: Path | None = None
+    start_time: str | None = None
+    end_time: str | None = None
     time_ranges: list[list[str]] | None = None
     strike_config: StrikeConfig = Field(alias="strike")
     template_config: TemplateConfig = Field(alias="template")
@@ -160,6 +150,10 @@ class ProcessConfig(BaseModel):
     @model_validator(mode="after")
     def convert_to_np_datetime(self) -> "ProcessConfig":
         """Convert time_ranges from lists of strings to lists of numpy datetime64 tuples."""
+        if self.start_time is not None:
+            self.start_time = np.datetime64(self.start_time, TIME_PRECISION)
+        if self.end_time is not None:
+            self.end_time = np.datetime64(self.end_time, TIME_PRECISION)
         if self.time_ranges is not None:
             self.time_ranges = [
                 (
@@ -178,6 +172,7 @@ class Record:
     sensor: str
     time_diff: np.ndarray
     corr: np.ndarray
+    shifts: np.ndarray
 
     def save_h5(self, path: Path) -> None:
         """Save the record to an HDF5 file.
@@ -187,8 +182,9 @@ class Record:
         /sensor
             /time_diff
             /corr
+            /shifts
         ```
-        `time_diff` and `corr` are 2D arrays with the shape
+        `time_diff`, `corr`, and `shifts` are 2D arrays with the shape
         `(num_detections, num_detections)`.
 
         Args:
@@ -196,19 +192,26 @@ class Record:
         """
         with h5py.File(path, "a") as file:
             # Create a new group for the station if it doesn't exist:
-            if self.sensor not in file:
-                file.create_group(self.sensor)
+            if self.sensor in file:
+                logging.warning(
+                    f"Group {self.sensor} already exists in {path}. Overwriting."
+                )
+                del file[self.sensor]
+
+            file.create_group(self.sensor)
 
             # Save the data:
             grp = file[f"{self.sensor}"]
             grp.attrs["sensor"] = self.sensor
             grp.create_dataset("time_diff", data=self.time_diff)
             grp.create_dataset("corr", data=self.corr)
+            grp.create_dataset("shifts", data=self.shifts)
 
 
-def build_strikes_df_per_sensor(
+def _build_strikes_df_per_sensor(
     inventory_path: Path,
     sensor: dict,
+    reference_time: np.datetime64,
     time_start: np.datetime64,
     time_end: np.datetime64,
     strike_index_offset: int = 0,
@@ -243,7 +246,7 @@ def build_strikes_df_per_sensor(
     name, channel, distance_s, threshold = tuple(sensor.values())
     logging.info(f"Processing sensor: {name}, channel: {channel}")
 
-    ds = read_acoustic_data(
+    ds = read_and_process(
         inventory_path,
         time_start,
         time_end,
@@ -253,7 +256,13 @@ def build_strikes_df_per_sensor(
         filt_type=filt_type,
         filt_freq=filt_freq,
     )
+
     peaks = find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_s)
+    samples_since_reference = (
+        (ds.time_vector[peaks] - reference_time)
+        / np.timedelta64(1, "s")
+        * ds.stats.sampling_rate
+    ).astype(int)
 
     logging.info(f"Found {len(peaks)} peaks for sensor {name}.")
     return DataFrame(
@@ -263,12 +272,14 @@ def build_strikes_df_per_sensor(
             "strike_index": np.arange(len(peaks)) + strike_index_offset,
             "time": ds.time_vector[peaks],
             "sample": peaks,
+            "global_sample": samples_since_reference,
         }
     )
 
 
 def build_strikes_df(
     config: StrikeConfig,
+    reference_time: np.datetime64,
     time_ranges: list[tuple[np.datetime64, np.datetime64]],
     inventory_path: Path,
 ) -> None:
@@ -284,6 +295,7 @@ def build_strikes_df(
 
     Args:
         config: StrikeConfig instance containing the configuration for strike finding.
+        reference_time: Reference time to use for calculating time differences.
         time_ranges: List of tuples containing the start and end times for each time range to process.
         inventory_path: Path to the inventory CSV files for the sensors.
     """
@@ -299,9 +311,10 @@ def build_strikes_df(
                 f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
             )
 
-            df = build_strikes_df_per_sensor(
+            df = _build_strikes_df_per_sensor(
                 inventory_path / f"inventory_{sensor['name']}.csv",
                 sensor,
+                reference_time,
                 time_start,
                 time_end,
                 strike_index_offset,
@@ -316,170 +329,10 @@ def build_strikes_df(
     logging.info(f"Strikes extracted and saved to {config.strike_index}.")
 
 
-def _build_sensor_templates(
-    ds,
-    strike_index: pl.DataFrame,
-    corrs: np.ndarray,
-    template_data_path: Path,
-    name: str,
-    buffer_start: float,
-    buffer_end: float,
-    corr_cutoff: float = 0.9,
-    window_size: int = 20,
-    plot_dir: Path | None = None,
-    ylim: tuple[float, float] | None = None,
-) -> None:
-    all_template_inds = _get_template_inds(
-        strike_index.shape[0], corrs, threshold=corr_cutoff, window_size=window_size
-    )
-
-    num_strikes = len(strike_index)
-    # Calculate maximum possible template length
-    max_template_length = int((buffer_start + buffer_end) * ds.stats.sampling_rate) + 1
-
-    # Initialize HDF file and datasets - keep file open during processing
-    template_data_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with h5py.File(template_data_path, "a") as f:
-        if name in f:
-            logging.warning(
-                f"Group {name} already exists in template_data. Overwriting."
-            )
-            del f[name]
-        g = f.create_group(name)
-        g.attrs["sampling_rate"] = ds.stats.sampling_rate
-        g.create_dataset("start_sample", shape=(num_strikes,), dtype=int)
-        g.create_dataset("end_sample", shape=(num_strikes,), dtype=int)
-        g.create_dataset(
-            "data",
-            shape=(num_strikes, max_template_length),
-            dtype=float,
-            fillvalue=np.nan,
-        )
-
-        template = None
-        previous_template_inds = []
-        traces = None
-
-        # Helper function to extract a trace on-demand
-
-        for i in tqdm(
-            range(num_strikes),
-            desc=f"Processing {name}",
-            total=num_strikes,
-            unit="strike",
-        ):
-            # Load trace based on mode
-            reference_trace = _get_trace(strike_index, ds, i)
-
-            start_index, end_index = _get_window_inds(
-                ds.stats.sampling_rate,
-                strike_index.item(i, "sample"),
-                buffer_start,
-                buffer_end,
-            )
-
-            # Use list comprehension instead of remove() to avoid modifying the list
-            template_inds = [idx for idx in all_template_inds[i] if idx != i]
-
-            # Case 1: No templates found, and no previous template
-            # Action: Use the reference trace as the template
-            if len(template_inds) < 1 and template is None:
-                logging.warning(
-                    f"Strike {i} has no templates. Using reference trace as template."
-                )
-                template_inds = [i]
-                traces = np.atleast_2d(reference_trace)
-                template = reference_trace
-            # Case 2: No templates found, but previous template exists
-            # Action: Use the previous template
-            elif len(template_inds) < 5:
-                logging.warning(
-                    f"Strike {i} has insufficient candidates. Using previous template."
-                )
-                template_inds = previous_template_inds.copy()
-                tmp_traces, tmp_ref = _enforce_same_size([traces, reference_trace])
-                template = np.median(
-                    np.hstack([tmp_traces, tmp_ref[:, np.newaxis]]), axis=1
-                )
-            # Case 3: Templates found
-            # Action: Generate a new template from the reference trace and the templates
-            else:
-                traces = [reference_trace]
-                for j in template_inds:
-                    # Load trace based on mode
-                    tr = _get_trace(strike_index, ds, j)
-                    fs = ds.stats.sampling_rate
-
-                    xcorr = correlate(reference_trace, tr, mode="same")
-                    lags = correlation_lags(len(reference_trace), len(tr), mode="same")
-                    peak_lag = lags[np.argmax(xcorr)]
-
-                    dt = np.timedelta64(
-                        int(peak_lag / fs * TIME_CONVERSION_FACTOR), TIME_PRECISION
-                    )
-
-                    corrected_template_start = (
-                        np.datetime64(strike_index.item(j, "start_time")) - dt
-                    )
-                    corrected_template_end = (
-                        np.datetime64(strike_index.item(j, "end_time")) - dt
-                    )
-
-                    # Need to extract from datastream at corrected times
-                    # (can't use pre-extracted traces here as times are shifted)
-                    template_tr = (
-                        ds.copy()
-                        .trim(
-                            starttime=corrected_template_start,
-                            endtime=corrected_template_end,
-                        )
-                        .data[0]
-                    )
-
-                    traces.append(template_tr)
-
-                traces = np.array(_enforce_same_size(traces)).T
-                template = np.median(traces, axis=1)
-                previous_template_inds = template_inds.copy()
-
-            template_length = len(template)
-            if template_length < max_template_length:
-                padded_template = np.full(max_template_length, np.nan)
-                padded_template[:template_length] = template
-            else:
-                padded_template = template[:max_template_length]
-
-            g["data"][i, :] = padded_template
-            g["start_sample"][i] = start_index
-            g["end_sample"][i] = end_index
-
-            if plot_dir:
-                print_corrs = ", ".join(
-                    [
-                        f"{x:.2f}"
-                        for x in np.atleast_1d(corrs[i, template_inds]).tolist()
-                    ]
-                )
-                title = (
-                    f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
-                    f"Template Indices: {template_inds}\nMax Corr: [{print_corrs}]"
-                )
-                savepath = plot_dir / name
-                savepath.mkdir(parents=True, exist_ok=True)
-                fig = plot_template(traces, template, title=title, ylim=ylim)
-                fig.savefig(
-                    savepath / f"{name}_strike_{i:04d}_template.png",
-                    dpi=200,
-                    bbox_inches="tight",
-                )
-                plt.close(fig)
-
-    logging.info(f"Templates for {name.upper()} saved to {template_data_path}")
-
-
 def build_templates(
     config: TemplateConfig,
+    start_time: np.datetime64,
+    end_time: np.datetime64,
     inventory_path: Path,
     strike_index_path: Path,
     strike_corr_path: Path,
@@ -490,53 +343,259 @@ def build_templates(
         ylim = sensor["ylim"]
         logging.info(f"Processing sensor: {name} channel {channel}.")
 
-        ds, strike_index, corrs = _load_strike_data(
-            inventory_path,
+        ds, strike_index = readers.read_strike_data(
+            inventory_path / f"inventory_{name}.csv",
             strike_index_path,
-            strike_corr_path,
             name,
             channel,
-            config.start_time,
-            config.end_time,
+            start_time,
+            end_time,
             config.buffer_start,
             config.buffer_end,
+            taper_pc=config.taper_pc,
+            dec_factor=config.dec_factor,
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
         )
-        _build_sensor_templates(
+        corr_matrix, shift_matrix, _ = readers.read_xcorr_data(strike_corr_path, name)
+        _build_sensor_templates_rolling(
             ds,
             strike_index,
-            corrs,
+            corr_matrix,
+            shift_matrix,
             config.template_data,
             name,
             config.buffer_start,
             config.buffer_end,
-            corr_cutoff=config.corr_cutoff,
             window_size=config.window_size,
+            max_shift=config.max_shift,
             plot_dir=config.plot_dir,
             ylim=ylim,
         )
 
 
+def _build_sensor_templates_rolling(
+    ds,
+    strike_index: pl.DataFrame,
+    corr_matrix: np.ndarray,
+    template_data_path: Path,
+    name: str,
+    buffer_start: float,
+    buffer_end: float,
+    window_size: int = 20,
+    plot_dir: Path | None = None,
+    ylim: tuple[float, float] | None = None,
+) -> None:
+    """Build templates using a rolling median window with iterative refinement.
+
+    Uses a two-step alignment process for robust template estimation:
+    1. Initial alignment: Uses pairwise shift matrix to compute robust consensus alignments
+    2. Refinement: Computes initial template, then re-aligns all traces to that template
+
+    This iterative approach combines the robustness of consensus alignment with the
+    precision of template-based alignment, ensuring all traces align to the same
+    waveform features. For each strike i, the template is computed from strikes
+    [i - window_size//2, i + window_size//2].
+
+    Args:
+        ds: DataStream containing the acoustic data.
+        strike_index: DataFrame containing strike indices and times.
+        corr_matrix: Pre-computed correlation matrix (n_strikes x n_strikes).
+        template_data_path: Path to save the template data.
+        name: Name of the sensor.
+        buffer_start: Buffer before the strike peak (in seconds).
+        buffer_end: Buffer after the strike peak (in seconds).
+        window_size: Number of strikes to include in the rolling window.
+        plot_dir: Optional directory to save template plots.
+        ylim: Optional y-axis limits for plots.
+    """
+    num_strikes = len(strike_index)
+    max_template_length = int((buffer_start + buffer_end) * ds.stats.sampling_rate)
+    half_window = window_size // 2
+    fs = ds.stats.sampling_rate
+
+    # Helper function to extract trace by sample indices (avoids ds.copy())
+    def extract_trace_efficient(
+        start_time: np.datetime64, end_time: np.datetime64
+    ) -> np.ndarray:
+        """Extract trace from datastream using direct array indexing."""
+        # Convert times to sample indices
+        start_sample = int(
+            (start_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs
+        )
+        end_sample = int((end_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
+
+        # Clip to valid range
+        start_sample = max(0, start_sample)
+        end_sample = min(ds.num_samples, end_sample)
+
+        return ds.data[0, start_sample:end_sample]
+
+    # Initialize HDF file and datasets
+    template_data_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with h5py.File(template_data_path, "a") as f:
+        if name in f:
+            logging.warning(
+                f"Group {name} already exists in template_data. Overwriting."
+            )
+            del f[name]
+        g = f.create_group(name)
+        g.attrs["sampling_rate"] = fs
+        g.create_dataset("start_sample", shape=(num_strikes,), dtype=int)
+        g.create_dataset("end_sample", shape=(num_strikes,), dtype=int)
+        g.create_dataset(
+            "data",
+            shape=(num_strikes, max_template_length),
+            dtype=float,
+            fillvalue=0.0,
+        )
+
+        for i in tqdm(
+            range(num_strikes),
+            desc=f"Processing {name}",
+            total=num_strikes,
+            unit="strike",
+        ):
+            # Determine window boundaries with constant window size
+            # For the first half_window strikes, use [0, window_size)
+            # For the last half_window strikes, use [num_strikes - window_size, num_strikes)
+            # For middle strikes, use [i - half_window, i + half_window)
+            if i < half_window:
+                window_start = 0
+                window_end = min(window_size, num_strikes)
+            elif i >= num_strikes - half_window:
+                window_start = max(0, num_strikes - window_size)
+                window_end = num_strikes
+            else:
+                window_start = i - half_window
+                window_end = i + half_window
+
+            # Get indices of strikes in the window
+            template_inds = list(range(window_start, window_end))
+
+            # STEP 1: Get the anchor trace to which all other traces in window
+            # will be initially aligned.
+            corr_matrix_window = corr_matrix[
+                window_start:window_end, window_start:window_end
+            ]
+            anchor_index = _get_anchor_trace(corr_matrix_window)
+            anchor_trace = extract_trace_efficient(
+                np.datetime64(
+                    strike_index.item(template_inds[anchor_index], "start_time")
+                ),
+                np.datetime64(
+                    strike_index.item(template_inds[anchor_index], "end_time")
+                ),
+            )
+
+            traces = []
+            for idx, j in enumerate(template_inds):
+                tr_start = np.datetime64(strike_index.item(j, "start_time"))
+                tr_end = np.datetime64(strike_index.item(j, "end_time"))
+
+                if idx == anchor_index:
+                    aligned_tr = anchor_trace
+                else:
+                    tr = extract_trace_efficient(tr_start, tr_end)
+                    shift_samples = sample_delay(anchor_trace, tr)
+                    shift_seconds = shift_samples / fs
+
+                    aligned_tr = extract_trace_efficient(
+                        tr_start
+                        - np.timedelta64(
+                            int(shift_seconds * TIME_CONVERSION_FACTOR), TIME_PRECISION
+                        ),
+                        tr_end
+                        - np.timedelta64(
+                            int(shift_seconds * TIME_CONVERSION_FACTOR), TIME_PRECISION
+                        ),
+                    )
+
+                if i == j:
+                    reference_ind = idx
+
+                traces.append(aligned_tr)
+
+            # STEP 4: Compute final template from template-aligned traces
+            traces = np.array(_enforce_same_size(traces))
+            template = np.median(traces, axis=0)
+
+            # Get window indices for this strike
+            start_index, end_index = _get_window_inds(
+                ds.stats.sampling_rate,
+                strike_index.item(i, "global_sample"),
+                buffer_start,
+                buffer_end,
+            )
+
+            # Extract the ORIGINAL trace from the SAME window we'll use for placement
+            original_trace = ds.data[0, start_index:end_index]
+
+            # Ensure both signals are the same length for accurate cross-correlation
+            min_length = min(len(original_trace), len(template))
+            original_trace_trimmed = original_trace[:min_length]
+            template_trimmed = template[:min_length]
+
+            ref_shift = sample_delay(original_trace_trimmed, template_trimmed)
+
+            # Pad or trim template to match max_template_length
+            template_length = len(template)
+            if template_length < max_template_length:
+                padded_template = np.full(max_template_length, 0.0)
+                padded_template[:template_length] = template
+            else:
+                padded_template = template[:max_template_length]
+
+            g["data"][i, :] = padded_template
+            g["start_sample"][i] = start_index + ref_shift
+            g["end_sample"][i] = end_index + ref_shift
+
+            if plot_dir:
+                title = (
+                    f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
+                    f"Rolling Window: [{window_start}, {window_end})"
+                )
+                savepath = plot_dir / name
+                savepath.mkdir(parents=True, exist_ok=True)
+                fig = plot_template(
+                    traces, template, reference_ind, title=title, ylim=ylim
+                )
+                fig.savefig(
+                    savepath / f"{name}_strike_{i:04d}_template.png",
+                    dpi=200,
+                    bbox_inches="tight",
+                )
+                plt.close(fig)
+
+    logging.info(f"Rolling templates for {name.upper()} saved to {template_data_path}")
+
+
 def denoise_strikes(
     config: DenoiseConfig,
+    start_time: np.datetime64,
+    end_time: np.datetime64,
     inventory_path: Path,
     strike_index_path: Path,
     template_path: Path,
 ) -> None:
     for sensor in config.sensors:
-        ds, strike_index, templates, start_samples, end_samples = _load_denoise_data(
-            inventory_path / f"inventory_{sensor['name']}.csv",
-            strike_index_path,
-            template_path,
-            sensor["name"],
-            sensor["channel"],
-            config.start,
-            config.end,
-            taper_pc=config.taper_pc,
-            dec_factor=config.dec_factor,
-            filt_type=config.filt_type,
-            filt_freq=config.filt_freq,
-            buffer_start=config.buffer_start,
-            buffer_end=config.buffer_end,
+        ds, strike_index, templates, start_samples, end_samples = (
+            readers.read_denoise_data(
+                inventory_path / f"inventory_{sensor['name']}.csv",
+                strike_index_path,
+                template_path,
+                sensor["name"],
+                sensor["channel"],
+                start_time,
+                end_time,
+                taper_pc=config.taper_pc,
+                dec_factor=config.dec_factor,
+                filt_type=config.filt_type,
+                filt_freq=config.filt_freq,
+                buffer_start=config.buffer_start,
+                buffer_end=config.buffer_end,
+            )
         )
         x_filtered, y = denoise_data(
             ds.data[0],
@@ -544,6 +603,7 @@ def denoise_strikes(
             templates,
             start_samples,
             end_samples,
+            taper_pc=config.template_taper_pc,
         )
 
         ds.data = np.vstack((ds.data[0], x_filtered, y))
@@ -563,10 +623,10 @@ def denoise_strikes(
 
 
 def _enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
-    """Ensure all arrays in the list have the same size by padding with NaNs."""
+    """Ensure all arrays in the list have the same size by padding with zeros."""
     max_length = max(arr.shape[0] for arr in arrays)
     return [
-        np.pad(arr, (0, max_length - arr.shape[0]), constant_values=np.nan)
+        np.pad(arr, (0, max_length - arr.shape[0]), constant_values=0.0)
         for arr in arrays
     ]
 
@@ -578,21 +638,37 @@ def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -
             for call_type, call_times in sensor_data.items():
                 time_start = call_times["start"]
                 time_end = call_times["end"]
-                template = read_acoustic_data(
+                template = read_and_process(
                     inventory_path / f"inventory_{sensor_name}.csv",
                     time_start,
                     time_end,
                     channels=channel,
-                    taper_pc=0.25,
-                    filt_type="bandpass",
-                    filt_freq=[19.0, 25.0],
-                ).taper(max_percentage=0.25)
+                    taper_pc=config.taper_pc,
+                    filt_type=config.filt_type,
+                    filt_freq=config.filt_freq,
+                )
 
                 g = f.create_group(f"{sensor_name}_{call_type}")
                 template.create_hdf5_dataset(g)
                 logging.info(
                     f"Saved template for whale {call_type} on {sensor_name} to {config.template_data}"
                 )
+
+
+def _get_anchor_trace(corr_matrix_window: np.ndarray) -> int:
+    """Get the "anchor trace" for a window of strikes, defined as the
+    trace with the highest median correlation to all others.
+
+    Args:
+        corr_matrix_window (np.ndarray): Correlation matrix for the strikes
+            in the current window.
+    Returns:
+        int: Index of the anchor trace within the window.
+    """
+    corr_matrix_masked = np.where(corr_matrix_window < 1.0, corr_matrix_window, np.nan)
+    median_corrs = np.nanmedian(corr_matrix_masked, axis=0)
+    anchor_index = np.nanargmax(median_corrs)
+    return anchor_index
 
 
 def _get_template_inds(
@@ -636,88 +712,6 @@ def _get_window_inds(
     return start_index, end_index
 
 
-def _load_denoise_data(
-    inventory_path: Path,
-    strike_index_path: Path,
-    template_path: Path,
-    sensor: str,
-    channel: int,
-    start: np.datetime64,
-    end: np.datetime64,
-    taper_pc: float | None = None,
-    dec_factor: int | None = None,
-    filt_type: str | None = None,
-    filt_freq: float | Sequence[float] | None = None,
-    buffer_start: float = 0.75,
-    buffer_end: float = 0.85,
-) -> tuple[DataStream, pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
-    ds = read_acoustic_data(
-        inventory_path,
-        start,
-        end,
-        channels=channel,
-        taper_pc=taper_pc,
-        dec_factor=dec_factor,
-        filt_type=filt_type,
-        filt_freq=filt_freq,
-    )
-
-    strike_index = (
-        read_strike_index(strike_index_path, buffer_start, buffer_end)
-        .filter(pl.col("sensor") == sensor)
-        .drop(["sensor", "channel"])
-    )
-
-    with h5py.File(template_path, "r") as f:
-        g = f.get(sensor)
-        template_fs = g.attrs["sampling_rate"]
-        templates = g["data"][:]
-        start_samples = g["start_sample"][:]
-        end_samples = g["end_sample"][:]
-
-    if template_fs != ds.stats.sampling_rate:
-        raise ValueError(
-            f"Template sampling rate {template_fs} does not match "
-            f"data sampling rate {ds.stats.sampling_rate}"
-        )
-
-    return ds, strike_index, templates, start_samples, end_samples
-
-
-def _load_strike_data(
-    inventory_path: Path,
-    strike_index_path: Path,
-    strike_corr_path: Path,
-    sensor: str,
-    channel: int,
-    time_start: np.datetime64,
-    time_end: np.datetime64,
-    buffer_start: float,
-    buffer_end: float,
-) -> tuple[DataStream, pl.DataFrame, np.ndarray]:
-    ds = read_acoustic_data(
-        inventory_path / f"inventory_{sensor}.csv",
-        time_start,
-        time_end,
-        channels=channel,
-        dec_factor=None,
-        filt_type="bandpass",
-        filt_freq=[19.0, 25.0],
-    )
-
-    strike_index = (
-        read_strike_index(strike_index_path, buffer_start, buffer_end)
-        .filter(pl.col("sensor") == sensor)
-        .drop(["sensor", "channel"])
-    )
-
-    with h5py.File(strike_corr_path, "r") as f:
-        group = f[sensor]
-        corrs = group["corr"][:]
-
-    return ds, strike_index, corrs
-
-
 def process_data(config: ProcessConfig) -> None:
     """Run data processing steps based on the provided configuration.
 
@@ -727,6 +721,7 @@ def process_data(config: ProcessConfig) -> None:
     """
     build_strikes_df(
         config.strike_config,
+        config.start_time,
         config.time_ranges,
         config.inventory_path,
     )
@@ -738,6 +733,8 @@ def process_data(config: ProcessConfig) -> None:
     )
     build_templates(
         config.template_config,
+        config.start_time,
+        config.end_time,
         config.inventory_path,
         config.strike_config.strike_index,
         config.strike_config.strike_corr,
@@ -745,49 +742,12 @@ def process_data(config: ProcessConfig) -> None:
     extract_whale_templates(config.whale_template_config, config.inventory_path)
     denoise_strikes(
         config.denoise_config,
+        config.start_time,
+        config.end_time,
         config.inventory_path,
         config.strike_config.strike_index,
         config.template_config.template_data,
     )
-
-
-def read_strikes(sensor_group: h5py.Group, **kwargs) -> tuple[NDArray, NDArray]:
-    """Read the strike data for a single sensor from the HDF5 group and
-    process it.
-
-    Args:
-        sensor_group: HDF5 group containing the strike data for a single sensor.
-        **kwargs: Additional keyword arguments to pass to the process_datastream
-            function.
-
-    Returns:
-        A tuple containing:
-        - data: 2D array of shape (num_detections, num_samples) containing the
-            processed strike data for the sensor.
-        - t0: 1D array of shape (num_detections,) containing the initial time
-            of each strike detection.
-    """
-    num_detections = len(sensor_group)
-
-    data = None
-    t0 = np.full((num_detections,), np.nan)
-    for i, strike_group in tqdm(
-        enumerate(sensor_group.values()), desc="Loading data", total=num_detections
-    ):
-        ds = process_datastream(read_hdf5_group(strike_group), **kwargs)
-        # Initialize within loop since num_samples depends on target_fs:
-        if data is None:
-            data = np.full((num_detections, ds.num_samples), np.nan)
-
-        if ds.num_samples < data.shape[1]:
-            ds.data = np.pad(ds.data, ((0, 0), (0, data.shape[1] - ds.num_samples)))
-        elif ds.num_samples > data.shape[1]:
-            ds.data = ds.data[:, : data.shape[1]]
-
-        data[i] = ds.data.squeeze()
-        t0[i] = ds.stats.time_init
-
-    return data, t0
 
 
 def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
@@ -799,7 +759,7 @@ def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
     """
     save_config = config.strike_save_config
 
-    df = read_strike_index(
+    df = readers.read_strike_index(
         config.strike_index,
         save_config.buffer_start,
         save_config.buffer_end,
@@ -809,18 +769,19 @@ def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
         for row in tqdm(
             df.iter_rows(), desc="Extracting & saving strikes", total=df.shape[0]
         ):
-            sensor, channel, strike_index, _, _, time_start, time_end = row
-            ds = read_acoustic_data(
+            sensor, channel, strike_index, _, _, _, time_start, time_end = row
+            ds = read_and_process(
                 inventory_path / f"inventory_{sensor}.csv",
                 time_start,
                 time_end,
                 channel,
                 detrend=save_config.detrend,
+                taper_pc=save_config.taper_pc,
                 dec_factor=save_config.dec_factor,
                 filt_type=save_config.filt_type,
                 filt_freq=save_config.filt_freq,
-                taper_pc=save_config.taper_pc,
             )
+
             g = file.create_group(f"{sensor}/{strike_index:04d}")
             ds.create_hdf5_dataset(g)
 
@@ -837,7 +798,7 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
     Returns:
         A Record instance containing the results of the cross-correlation for the sensor.
     """
-    data, t0 = read_strikes(sensor_group, **sp_kwargs)
+    data, t0 = readers.read_strikes(sensor_group, **sp_kwargs)
 
     num_detections = data.shape[0]
     time_diff = np.full((num_detections, num_detections), np.nan)
@@ -856,15 +817,23 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
     jl_time = jl.seval("x -> Vector{Float64}(x)")(t0)
 
     time_diff = np.array(jl.CrossCorr.dt_matrix(jl_time))
-    max_corr = np.array(jl.CrossCorr.corr_matrix(jl_data))
+    max_corr, shifts = jl.CrossCorr.corr_matrix(jl_data)
+    max_corr = np.array(max_corr)
+    shifts = np.array(shifts)
 
-    logging.info(f"Computed time_diff and max_corr for sensor {sensor.upper()}.")
-    logging.info(f"Shape of time_diff: {time_diff.shape}, max_corr: {max_corr.shape}.")
+    logging.info(
+        f"Computed time_diff, max_corr, and shifts for sensor {sensor.upper()}."
+    )
+    logging.info(
+        f"Shape of time_diff: {time_diff.shape}, max_corr: {max_corr.shape}, "
+        f"shifts: {shifts.shape}."
+    )
 
     return Record(
         sensor=sensor,
         time_diff=time_diff,
         corr=max_corr,
+        shifts=shifts,
     )
 
 

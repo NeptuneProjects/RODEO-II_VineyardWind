@@ -1,140 +1,27 @@
 """Functions to read data from various file formats used in the project."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import logging
-import os
 from pathlib import Path
-import struct
-import tomllib
 
-import dascore as dc
-from dascore.core.spool import DataFrameSpool
 import h5py
 import numpy as np
-import numpy.typing as npt
 import pandas as pd
 import polars as pl
+from numpy.typing import NDArray
 from polars import DataFrame
-from tritonoa.data.reader import read_inventory
+from tqdm import tqdm
+from tritonoa.data.reader import read_and_process, read_hdf5_group
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-from vineyard.signal_proc import (
-    convert_to_strain_rate,
-    process_datastream,
-    subtract_median,
-)
-
-
-@dataclass(frozen=True)
-class DASArrayProperties:
-    name: str
-    sampling_rate_hz: float
-    spatial_resolution_m: float
-    fiber_type: str
-    zone_type: str
-    start_distance_m: float
-    stop_distance_m: float
-    start_positioning_m: float
-    measure_length_m: float
-    orig_sampling_rate_hz: float
-    time_decimation_factor: int
-    calibration_factor_nm: float
-    gauge_length_m: float
-    start_time: datetime
-    scale_factor: float
-    calibration_factor: float
-
-    @staticmethod
-    def _format_time(time: str) -> None:
-        clean_time = time.replace(" (UTC)", "")
-        new_time = datetime.strptime(clean_time, "%d-%b-%Y %H:%M:%S.%f")
-        return new_time.replace(tzinfo=timezone.utc)
-
-    @classmethod
-    def from_dict(cls, properties: dict) -> "DASArrayProperties":
-        """Create a FileProperties instance from a dictionary of properties."""
-        return cls(
-            name=properties["name"],
-            sampling_rate_hz=properties["SamplingFrequency[Hz]"],
-            spatial_resolution_m=properties["SpatialResolution[m]"],
-            fiber_type=properties["Fibre Type"],
-            zone_type=properties["Zone Type"],
-            start_distance_m=properties["Start Distance (m)"],
-            stop_distance_m=properties["Stop Distance (m)"],
-            start_positioning_m=properties["StartPosition[m]"],
-            measure_length_m=properties["MeasureLength[m]"],
-            orig_sampling_rate_hz=properties["Precise Sampling Frequency (Hz)"],
-            time_decimation_factor=properties["Time Decimation"],
-            calibration_factor_nm=properties["Unit Calibration (nm)"],
-            gauge_length_m=properties["GaugeLength"],
-            start_time=cls._format_time(properties["GPSTimeStamp"]),
-            scale_factor=1 / 8192,
-            calibration_factor=properties["Unit Calibration (nm)"],
-        )
-
-
-@dataclass
-class TDMSHeader:
-    """Class representing TDMS file header information"""
-
-    decimated: bool = False
-    next_segment_offset: int = 0
-    data_offset: int = 0
-    file_size: int = 0
-    n_ch: int = 0
-    properties: list[tuple[str, any, int]] = field(default_factory=list)
-    data_type: int = 0
-    chunk_size: int = 0
-    channel_length: int = 0
-    data_type_str: str = ""
-
-    def get_property_dict(self) -> dict[str, any]:
-        """Returns properties as a dictionary of name:value pairs"""
-        return {name: value for name, value, _ in self.properties}
-
-
-def read_acoustic_data(
-    inventory: Path,
-    start: str | np.datetime64,
-    end: str | np.datetime64,
-    channels: int | Sequence[int] | None = None,
-    detrend: bool = True,
-    taper_pc: float | None = None,
-    dec_factor: int | None = None,
-    filt_type: str | None = None,
-    filt_freq: float | Sequence[float] | None = None,
-    metadata: dict | None = None,
-    detrend_kwargs: dict = {},
-) -> DataStream:
-    if isinstance(start, str) | isinstance(start, datetime):
-        start = np.datetime64(start, TIME_PRECISION)
-    if isinstance(end, str) | isinstance(end, datetime):
-        end = np.datetime64(end, TIME_PRECISION)
-
-    ds = read_inventory(
-        file_path=inventory,
-        time_start=start,
-        time_end=end,
-        channels=channels,
-        metadata=metadata,
-    )
-    return process_datastream(
-        ds,
-        detrend=detrend,
-        taper_pc=taper_pc,
-        dec_factor=dec_factor,
-        filt_type=filt_type,
-        filt_freq=filt_freq,
-        detrend_kwargs=detrend_kwargs,
-    )
+from vineyard.signal_proc import process_datastream
 
 
 def read_bathymetry(
     file: Path,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Read bathymetry data from an HDF5 file.
 
     Args:
@@ -150,27 +37,50 @@ def read_bathymetry(
     return data, lonvec, latvec
 
 
-def read_das_array_properties(file: Path) -> DASArrayProperties:
-    tdms_properties = read_tdms_properties(file)
-    return DASArrayProperties.from_dict(tdms_properties)
+def read_denoise_data(
+    inventory_path: Path,
+    strike_index_path: Path,
+    template_path: Path,
+    sensor: str,
+    channel: int,
+    start: np.datetime64,
+    end: np.datetime64,
+    taper_pc: float | None = None,
+    dec_factor: int | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    buffer_start: float = 0.75,
+    buffer_end: float = 0.85,
+) -> tuple[DataStream, pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    ds, strike_index = read_strike_data(
+        inventory_path,
+        strike_index_path,
+        sensor,
+        channel,
+        start,
+        end,
+        buffer_start,
+        buffer_end,
+        taper_pc,
+        dec_factor,
+        filt_type,
+        filt_freq,
+    )
 
+    with h5py.File(template_path, "r") as f:
+        g = f.get(sensor)
+        template_fs = g.attrs["sampling_rate"]
+        templates = g["data"][:]
+        start_samples = g["start_sample"][:]
+        end_samples = g["end_sample"][:]
 
-def read_das_locations(file: Path) -> pl.DataFrame:
-    """Read the DAS location from a HDF5 file.
+    if template_fs != ds.stats.sampling_rate:
+        raise ValueError(
+            f"Template sampling rate {template_fs} does not match "
+            f"data sampling rate {ds.stats.sampling_rate}"
+        )
 
-    Args:
-        file (Path): Path to the HDF5 file.
-    Returns:
-        Dataframe with DAS location in latitudes/longitudes.
-    """
-    logging.info(f"Reading file: {file}")
-    with h5py.File(file, "r") as f:
-        das_location = {
-            "latitude": f.get("Lat")[:],
-            "longitude": f.get("Lon")[:],
-            "error_m": f.get("Location_err[m]")[:],
-        }
-    return pl.DataFrame(das_location)
+    return ds, strike_index, templates, start_samples, end_samples
 
 
 def read_sensor_locations(file: Path) -> pd.DataFrame:
@@ -190,6 +100,39 @@ def read_sensor_locations(file: Path) -> pd.DataFrame:
             "Depth [m]": "depth",
         }
     )
+
+
+def read_strike_data(
+    inventory_path: Path,
+    strike_index_path: Path,
+    sensor: str,
+    channel: int,
+    time_start: np.datetime64,
+    time_end: np.datetime64,
+    buffer_start: float,
+    buffer_end: float,
+    taper_pc: float | None = None,
+    dec_factor: int | None = None,
+    filt_type: str | None = None,
+    filt_freq: str | None = None,
+) -> tuple[DataStream, pl.DataFrame]:
+    ds = read_and_process(
+        inventory_path,
+        time_start,
+        time_end,
+        channel,
+        taper_pc=taper_pc,
+        dec_factor=dec_factor,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+    )
+    strike_index = (
+        read_strike_index(strike_index_path, buffer_start, buffer_end)
+        .filter(pl.col("sensor") == sensor)
+        .drop(["sensor", "channel"])
+    )
+
+    return ds, strike_index
 
 
 def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> DataFrame:
@@ -219,220 +162,43 @@ def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> Da
     )
 
 
-def read_tdms(
-    file: Path,
-    time: tuple[str | None] | None = None,
-    channel: tuple[int | None] | None = None,
-) -> tuple[dc.Patch, DASArrayProperties]:
-    def add_channel_numbers(patch: DataFrameSpool) -> DataFrameSpool:
-        """
-        Add channel number to the patch.
-        """
-        dist_len = patch.coord_shapes["distance"][0]
-        channel_number = np.arange(dist_len)
-        return patch.update_coords(channel=("distance", channel_number))
-        # return patch.update_coords(
-        #     channel_number=("distance", channel_number)
-        # ).set_dims(distance="channel_number")
-
-    # 1. Get attributes from the directory
-    properties = read_das_array_properties(list(file.glob("*.tdms"))[0])
-
-    # 2. Get the multi-file spool from the directory
-    spool = dc.spool(file)
-
-    # 2.5 Select by time
-    if time:
-        patch = spool.select(time=time).chunk(time=None)[0]
-
-    logging.info(f"Original patch shape: {patch.shape}")
-
-    # 6. Add the channel coordinates to the patch
-    patch = add_channel_numbers(patch)
-
-    # 7. Select the first and last channel
-    out = patch.select(channel=channel, relative=True)
-
-    # Convert to strain rate
-
-    new_data = convert_to_strain_rate(
-        out.data,
-        properties.scale_factor,
-        properties.calibration_factor,
-        properties.sampling_rate_hz,
-        properties.gauge_length_m,
-    )
-    new_data = subtract_median(new_data)
-
-    new_patch = out.update(data=new_data)
-
-    return new_patch, properties
-
-
-def read_tdms_header(file_path: Path) -> TDMSHeader:
-    """Read TDMS file header information
+def read_strikes(sensor_group: h5py.Group, **kwargs) -> tuple[NDArray, NDArray]:
+    """Read the strike data for a single sensor from the HDF5 group and
+    process it.
 
     Args:
-        file_path: Path to the TDMS file
+        sensor_group: HDF5 group containing the strike data for a single sensor.
+        **kwargs: Additional keyword arguments to pass to the process_datastream
+            function.
 
     Returns:
-        A TDMSFileInfo object containing the header information
+        A tuple containing:
+        - data: 2D array of shape (num_detections, num_samples) containing the
+            processed strike data for the sensor.
+        - t0: 1D array of shape (num_detections,) containing the initial time
+            of each strike detection.
     """
-    fileinfo = TDMSHeader()
-    fileinfo.file_size = os.path.getsize(file_path)
+    num_detections = len(sensor_group)
 
-    with open(file_path, "rb") as fid:
-        # Read lead in
-        fid.seek(4)  # Jump the "TDSm" tag
-        decimated_byte = int.from_bytes(fid.read(1), byteorder="little")
-        decimated_bin = format(decimated_byte, "08b")
-        fileinfo.decimated = (
-            decimated_bin[2] == "0"
-        )  # Get data format, decimated or not
+    data = None
+    t0 = np.full((num_detections,), np.nan)
+    for i, strike_group in tqdm(
+        enumerate(sensor_group.values()), desc="Loading data", total=num_detections
+    ):
+        ds = process_datastream(read_hdf5_group(strike_group), **kwargs)
+        # Initialize within loop since num_samples depends on target_fs:
+        if data is None:
+            data = np.full((num_detections, ds.num_samples), np.nan)
 
-        fid.seek(12)  # Jump to next Segment offset
-        fileinfo.next_segment_offset = (
-            int.from_bytes(fid.read(8), byteorder="little") + 28
-        )
-        fileinfo.data_offset = int.from_bytes(fid.read(8), byteorder="little") + 28
+        if ds.num_samples < data.shape[1]:
+            ds.data = np.pad(ds.data, ((0, 0), (0, data.shape[1] - ds.num_samples)))
+        elif ds.num_samples > data.shape[1]:
+            ds.data = ds.data[:, : data.shape[1]]
 
-        if fileinfo.next_segment_offset == -1:
-            fileinfo.next_segment_offset = fileinfo.file_size
+        data[i] = ds.data.squeeze()
+        t0[i] = ds.stats.time_init
 
-        # Read properties
-        fid.seek(28)
-        fileinfo.n_ch = (
-            int.from_bytes(fid.read(4), byteorder="little") - 2
-        )  # Total objects - file objects - group objects
-        n = int.from_bytes(fid.read(4), byteorder="little")
-        object_name = fid.read(n).decode("utf-8", errors="replace")
-
-        fid.seek(4, 1)  # Relative seek from current position
-        n = int.from_bytes(fid.read(4), byteorder="little")
-
-        for i in range(n):
-            l = int.from_bytes(fid.read(4), byteorder="little")
-            prop_name = fid.read(l).decode("utf-8", errors="replace")
-            property_type = int.from_bytes(fid.read(4), byteorder="little")
-
-            prop_value = None
-            if property_type == 32:  # String
-                l = int.from_bytes(fid.read(4), byteorder="little")
-                prop_value = fid.read(l).decode("utf-8", errors="replace")
-            elif property_type == 9:  # Single
-                prop_value = struct.unpack("<f", fid.read(4))[0]
-            elif property_type == 5:  # UInt8
-                prop_value = int.from_bytes(fid.read(1), byteorder="little")
-            elif property_type == 10:  # Double
-                prop_value = struct.unpack("<d", fid.read(8))[0]
-            elif property_type == 33:  # Boolean
-                prop_value = bool(int.from_bytes(fid.read(1), byteorder="little"))
-            elif property_type == 3:  # Int32
-                prop_value = int.from_bytes(
-                    fid.read(4), byteorder="little", signed=True
-                )
-            elif property_type == 2:  # Int16
-                prop_value = int.from_bytes(
-                    fid.read(2), byteorder="little", signed=True
-                )
-            elif property_type == 7:  # UInt32
-                prop_value = int.from_bytes(fid.read(4), byteorder="little")
-            elif property_type == 6:  # UInt16
-                prop_value = int.from_bytes(fid.read(2), byteorder="little")
-            elif property_type == 68:  # Timestamp
-                fract = struct.unpack("<Q", fid.read(8))[0] * 2**-64
-                seconds = struct.unpack("<q", fid.read(8))[0]
-
-                # Calculate date from seconds since Jan 1, 1904
-                base_date = datetime(1904, 1, 1)
-                if seconds == 0 and fract == 0:
-                    prop_value = "N/A"
-                else:
-                    date = base_date + timedelta(seconds=seconds)
-                    prop_value = date.strftime("%d-%b-%Y %H:%M:%S.%f")[:-3] + " (UTC)"
-            else:
-                raise ValueError(f"Error: Property type not defined: {property_type}")
-
-            fileinfo.properties.append((prop_name, prop_value, property_type))
-
-        # Read group information and channel path
-        group_name_len = int.from_bytes(fid.read(4), byteorder="little")
-        fid.seek(8 + group_name_len, 1)  # Jump Group Information
-
-        channel_path_len = int.from_bytes(fid.read(4), byteorder="little")
-        fid.seek(
-            4 + channel_path_len, 1
-        )  # Jump first channel path and length of index information
-
-        # Read data type and chunk size
-        fileinfo.data_type = int.from_bytes(fid.read(4), byteorder="little")
-        fid.seek(4, 1)  # Jump Dimension of the raw data array
-        fileinfo.chunk_size = int.from_bytes(fid.read(4), byteorder="little")
-
-        # Determine data type string and calculate channel length
-        if fileinfo.file_size == fileinfo.next_segment_offset:
-            fileinfo.channel_length = 0
-        else:
-            # Try to read the next segment for more precise channel length
-            try:
-                fid.seek(fileinfo.next_segment_offset + 12)
-                offset2 = int.from_bytes(fid.read(8), byteorder="little")
-                offset1 = int.from_bytes(fid.read(8), byteorder="little")
-                length_diff = offset2 - offset1
-
-                if fileinfo.data_type == 2:  # int16
-                    fileinfo.data_type_str = "int16"
-                    fileinfo.channel_length = int(
-                        (
-                            length_diff
-                            + fileinfo.next_segment_offset
-                            - fileinfo.data_offset
-                        )
-                        / fileinfo.n_ch
-                        / 2
-                    )
-                elif fileinfo.data_type == 9:  # single
-                    fileinfo.data_type_str = "single"
-                    fileinfo.channel_length = int(
-                        (
-                            length_diff
-                            + fileinfo.next_segment_offset
-                            - fileinfo.data_offset
-                        )
-                        / fileinfo.n_ch
-                        / 4
-                    )
-                else:
-                    fileinfo.data_type_str = f"unknown_{fileinfo.data_type}"
-            except:
-                # Fallback: estimate channel length from file size
-                if fileinfo.data_type == 2:  # int16
-                    fileinfo.data_type_str = "int16"
-                    fileinfo.channel_length = int(
-                        (fileinfo.file_size - fileinfo.data_offset) / fileinfo.n_ch / 2
-                    )
-                elif fileinfo.data_type == 9:  # single
-                    fileinfo.data_type_str = "single"
-                    fileinfo.channel_length = int(
-                        (fileinfo.file_size - fileinfo.data_offset) / fileinfo.n_ch / 4
-                    )
-                else:
-                    fileinfo.data_type_str = f"unknown_{fileinfo.data_type}"
-
-    return fileinfo
-
-
-def read_tdms_properties(file_path: Path) -> dict[str, any]:
-    """Convenience function to read TDMS properties as a dictionary
-
-    Args:
-        file_path: Path to the TDMS file
-
-    Returns:
-        dictionary containing the file properties
-    """
-    fileinfo = read_tdms_header(file_path)
-    return fileinfo.get_property_dict()
+    return data, t0
 
 
 def read_turbine_locations(file: Path) -> pd.DataFrame:
@@ -453,49 +219,19 @@ def read_turbine_locations(file: Path) -> pd.DataFrame:
     )
 
 
-# @dataclass(frozen=True)
-# class tsdmFileProperties:
-#     scale_factor: float = 1.0 / 8192.0
-#     calibration_factor: float = 116.0
-# file_name: str
-# sampling_rate_hz: float
-# spatial_resolution_m: float
-# fiber_type: str
-# zone_type: str
-# start_distance_m: float
-# stop_distance_m: float
-# start_positioning_m: float
-# measure_length_m: float
-# orig_sampling_rate_hz: float
-# time_decimation_factor: int
-# calibration_factor_nm: float
-# gauge_length_m: float
-# start_time: datetime
+def read_xcorr_data(data_path: Path, sensor: str) -> tuple[NDArray, NDArray, NDArray]:
+    """Read the cross-correlation data from an HDF5 file for a specific sensor.
 
-# def __post_init__(self):
-#     self._add_utc()
-
-# def _add_utc(self) -> None:
-#     """Ensure that the start_time is in UTC if no time zone is given."""
-#     if self.start_time.tzinfo is None:
-#         self.start_time = self.start_time.replace(tzinfo=timezone.utc)
-
-# @classmethod
-# def from_dict(cls, properties: dict) -> "tsdmFileProperties":
-#     """Create a FileProperties instance from a dictionary of properties."""
-#     return cls(
-#         file_name=properties["name"],
-#         sampling_rate_hz=properties["SamplingFrequency[Hz]"],
-#         spatial_resolution_m=properties["SpatialResolution[m]"],
-#         fiber_type=properties["Fibre Type"],
-#         zone_type=properties["Zone Type"],
-#         start_distance_m=properties["Start Distance (m)"],
-#         stop_distance_m=properties["Stop Distance (m)"],
-#         start_positioning_m=properties["StartPosition[m]"],
-#         measure_length_m=properties["MeasureLength[m]"],
-#         orig_sampling_rate_hz=properties["Precise Sampling Frequency (Hz)"],
-#         time_decimation_factor=properties["Time Decimation"],
-#         calibration_factor_nm=properties["Unit Calibration (nm)"],
-#         gauge_length_m=properties["GaugeLength"],
-#         start_time=properties["GPSTimeStamp"],
-#     )
+    Args:
+        data_path: Path to the HDF5 file containing the cross-correlation data.
+        sensor: Name of the sensor to read data for.
+    Returns:
+        Tuple of numpy arrays containing the cross-correlation data, shift matrix, and time differences.
+    """
+    logging.info(f"Reading xcorr data for sensor {sensor} from: {data_path}")
+    with h5py.File(data_path, "r") as f:
+        sensor_group = f[sensor]
+        corr_matrix = sensor_group["corr"][:]
+        shift_matrix = sensor_group["shifts"][:]
+        time_diff = sensor_group["time_diff"][:]
+    return corr_matrix, shift_matrix, time_diff
