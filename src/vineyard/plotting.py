@@ -618,23 +618,98 @@ def plot_all_acoustic_data(
 
 def plot_template(
     traces: NDArray,
-    template: NDArray,
+    template: NDArray | None = None,
+    reference_ind: int | None = None,
     title: str = None,
     ylim: Sequence[float] | None = None,
-    figsize: tuple[float] = (6, 3),
+    figsize: tuple[float] = (4, 10),
 ) -> Figure:
-    fig = plt.figure(figsize=figsize)
-    ax = plt.gca()
-    ax.plot(traces[:, 0], "b", label="Reference", zorder=15)
-    ax.plot(traces, "k", zorder=10)
+    fig, axes = plt.subplots(
+        nrows=4,
+        figsize=figsize,
+        gridspec_kw={"height_ratios": [1, 0.25, 0.25, 0.25], "hspace": 0.3},
+    )
+    ax = axes[0]
+
+    # Determine vertical spacing for stacking
+    n_traces = traces.shape[0]
+    trace_max = np.nanmax(np.abs(traces))
+    # Handle NaN or zero trace_max
+    if np.isnan(trace_max) or trace_max == 0:
+        offset_spacing = 1.0
+    else:
+        offset_spacing = 2.5 * trace_max
+
+    # Plot traces stacked from top, with reference trace in blue
+    offset_idx = 0
+    ytick_positions = []
+    ytick_labels = []
+
+    for i in range(n_traces):
+        if i == reference_ind:
+            ax.plot(
+                traces[i] - offset_idx * offset_spacing,
+                "b",
+                label="Reference",
+                linewidth=0.8,
+            )
+        else:
+            ax.plot(
+                traces[i] - offset_idx * offset_spacing,
+                "k",
+                linewidth=0.8,
+                alpha=0.7,
+            )
+        ytick_positions.append(-offset_idx * offset_spacing)
+        ytick_labels.append(f"{i}")
+        offset_idx += 1
+
+    # Plot template at the bottom if provided
+    ax.plot(template - offset_idx * offset_spacing, "r", label="Template", linewidth=1)
+    ytick_positions.append(-offset_idx * offset_spacing)
+    ytick_labels.append("Template")
+
+    ax.set_xlim(0, traces.shape[1])
+    ax.set_yticks(ytick_positions)
+    ax.set_yticklabels(ytick_labels)
+    ax.legend(loc="upper left")
+    ax.set_xlabel("Sample Index")
+
+    ax = axes[1]
+    for i in range(n_traces):
+        if i == reference_ind:
+            ax.plot(traces[i], "b", label="Reference", linewidth=0.8)
+        else:
+            ax.plot(traces[i], "k", linewidth=0.8, alpha=0.7)
     ax.plot(template, "r", label="Template", zorder=20)
-    ax.set_xlim(0, traces.shape[0])
+    ax.set_xlim(0, traces.shape[1])
     if ylim is not None:
         ax.set_ylim(ylim)
     ax.legend(loc="upper left")
     ax.set_xlabel("Sample Index")
     ax.set_ylabel("Amplitude")
-    ax.set_title(title)
+
+    ax = axes[2]
+    ax.plot(traces[reference_ind], "b", label="Reference", linewidth=0.8)
+    ax.plot(template, "r", label="Template", zorder=20)
+    ax.set_xlim(0, traces.shape[1])
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    ax.legend(loc="upper left")
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("Amplitude")
+
+    ax = axes[3]
+    diff = template - traces[reference_ind]
+    ax.plot(diff, "tab:green", label="Residual")
+    ax.set_xlim(0, traces.shape[1])
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    ax.legend(loc="upper left")
+    ax.set_xlabel("Sample Index")
+    ax.set_ylabel("Amplitude")
+
+    fig.suptitle(title, y=0.92)
     return fig
 
 
