@@ -15,6 +15,8 @@ yres = 800
 
 [process]
 
+start_time = "2023-12-01T21:06:00.00"
+end_time = "2023-12-01T22:26:00.00"
 time_ranges = [
     [
         "2023-12-01T21:06:55.00",
@@ -85,36 +87,39 @@ buffer_end = 0.9
 max_workers = 10
 detrend = true
 taper_pc = 0.05
-dec_factor = 20
 filt_type = "bandpass"
-filt_freq = [15.0, 30.0]
+filt_freq = [15.0, 300.0]
 
 [process.template]
 sensors = [
     { name = "3dvha", channel = 7, ylim = [
-        -0.015,
-        0.015,
+        -0.05,
+        0.05,
     ] },
     { name = "vla1", channel = 3, ylim = [
-        -1.0e7,
-        1.0e7,
+        -2.5e-7,
+        2.5e-7,
     ] },
     { name = "vla2", channel = 0, ylim = [
-        -5.0e6,
-        5.0e6,
+        -4.0e-8,
+        4.0e-8,
     ] },
 ]
-start_time = "2023-12-01T21:06:00.00"
-end_time = "2023-12-01T22:26:00.00"
-buffer_start = 1.1
-buffer_end = 0.9
+buffer_start = 0.8
+buffer_end = 1.0
+filt_type = "bandpass"
+filt_freq = [15.0, 50.0]
 corr_cutoff = 0.75
-window_size = 35
+window_size = 20
+max_shift = 0.1
 plot_dir = "reports/figures/strike_templates/"
 template_data = "data/acoustic/templates/strike_templates.h5"
 
 [process.whale_template]
 template_data = "data/acoustic/templates/whale_templates.h5"
+filt_type = "bandpass"
+filt_freq = [15.0, 50.0]
+taper_pc = 0.15
 
 [process.whale_template.calls.3dvha]
 channel = 7
@@ -133,14 +138,13 @@ type2 = { start = "2023-12-01T22:25:55.08", end = "2023-12-01T22:25:56.39" }
 
 [process.denoise]
 denoised_data = "data/acoustic/denoised/"
-start = "2023-12-01T21:06:00.00"
-end = "2023-12-01T22:26:00.00"
 sensors = [
     { name = "3dvha", channel = 7 },
     { name = "vla1", channel = 3 },
     { name = "vla2", channel = 0 },
 ]
 filt_type = "bandpass"
-filt_freq = [15.0, 30.0]
-buffer_start = 1.1
-buffer_end = 0.9
+filt_freq = [15.0, 50.0]
+buffer_start = 0.8
+buffer_end = 1.0
+template_taper_pc = 0.05
