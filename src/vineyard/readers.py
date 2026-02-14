@@ -219,6 +219,26 @@ def read_turbine_locations(file: Path) -> pd.DataFrame:
     )
 
 
+def read_whale_template(
+    template_path: Path, sensor: str, call_type: str
+) -> DataStream:
+    """Read a whale call template from an HDF5 file.
+
+    Args:
+        template_path: Path to the HDF5 file containing the whale templates.
+        sensor: Name of the sensor.
+        call_type: Type of whale call (e.g., "type1", "type2").
+    Returns:
+        DataStream containing the whale template data.
+    """
+    group_name = f"{sensor}_{call_type}"
+    logging.info(f"Reading whale template {group_name} from: {template_path}")
+    with h5py.File(template_path, "r") as f:
+        template_group = f[group_name]
+        ds = read_hdf5_group(template_group)
+    return ds
+
+
 def read_xcorr_data(data_path: Path, sensor: str) -> tuple[NDArray, NDArray, NDArray]:
     """Read the cross-correlation data from an HDF5 file for a specific sensor.
 

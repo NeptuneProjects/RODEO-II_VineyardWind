@@ -14,13 +14,14 @@ import polars as pl
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
 from tqdm import tqdm
-from tritonoa.data.reader import read_and_process
+from tritonoa.data.reader import read_and_process, read_hdf5, read_hdf5_group
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.plotting import plot_template
+from vineyard.readers import read_whale_template
 from vineyard.signal_proc import denoise_data, find_strikes, sample_delay
 
 
@@ -92,6 +93,9 @@ class StrikeConfig(BaseModel):
         config.strike_corr = config.strike_corr.parent / new_name
 
         return config
+
+
+class TDOAConfig(BaseModel): ...
 
 
 class TemplateConfig(BaseModel):
@@ -749,7 +753,6 @@ def process_data(config: ProcessConfig) -> None:
         config.strike_config.strike_index,
         config.strike_config.strike_corr,
     )
-    extract_whale_templates(config.whale_template_config, config.inventory_path)
     denoise_strikes(
         config.denoise_config,
         config.start_time,
@@ -758,6 +761,64 @@ def process_data(config: ProcessConfig) -> None:
         config.strike_config.strike_index,
         config.template_config.template_data,
     )
+    extract_whale_templates(config.whale_template_config, config.inventory_path)
+    pulse_compress(config.denoise_config, config.whale_template_config)
+
+
+def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -> None:
+    """Apply pulse compression to the denoised strike data using the whale call templates.
+
+    Args:
+        denoise_config: DenoiseConfig instance containing the configuration
+            for denoising and pulse compression.
+        config: WhaleTemplateConfig instance containing the configuration
+            for whale call templates.
+    """
+    for sensor in denoise_config.sensors:
+        logging.info(f"Processing sensor: {sensor['name']} for pulse compression.")
+        sensor_name = sensor["name"]
+
+        ds = read_hdf5(denoise_config.denoised_data / f"{sensor_name}.h5")
+        ds_orig = ds.copy()
+
+        ds.data = ds.data[1]
+        ds_orig.data = ds_orig.data[0]
+
+        template_type1 = read_whale_template(
+            config.template_data, sensor_name, "type1"
+        ).data.squeeze()
+        template_type2 = read_whale_template(
+            config.template_data, sensor_name, "type2"
+        ).data.squeeze()
+
+        ds_pc_orig1 = ds_orig.copy().pulse_compression(template_type1).data
+        ds_pc_orig2 = ds_orig.copy().pulse_compression(template_type2).data
+        ds_pc_dn1 = ds.copy().pulse_compression(template_type1).data
+        ds_pc_dn2 = ds.copy().pulse_compression(template_type2).data
+
+        new_ds = ds.copy()
+        new_ds.data = np.vstack(
+            (ds_orig.data, ds.data, ds_pc_orig1, ds_pc_orig2, ds_pc_dn1, ds_pc_dn2)
+        )
+        new_ds.stats.channels = [0, 1, 2, 3, 4, 5]
+        new_ds.stats.metadata = {
+            "sensor": sensor_name,
+            "channel": sensor["channel"],
+            "channel_names": {
+                0: "Original Signal",
+                1: "Denoised Signal",
+                2: "Pulse Compression Original Type 1",
+                3: "Pulse Compression Original Type 2",
+                4: "Pulse Compression Denoised Type 1",
+                5: "Pulse Compression Denoised Type 2",
+            },
+        }
+
+        new_ds.write_hdf5(denoise_config.denoised_data / f"{sensor_name}_pc.h5")
+        logging.info(
+            f"Pulse compression completed for sensor: {sensor_name}. "
+            f"Saved to {denoise_config.denoised_data / f'{sensor_name}_pc.h5'}"
+        )
 
 
 def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
