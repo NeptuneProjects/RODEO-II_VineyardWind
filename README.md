@@ -37,7 +37,7 @@ The entire workflow can be configured using two configuration files: `config/con
 
 The entire workflow can be run end-to-end using the command:  
 ```bash
-workflow --config config/config.toml
+workflow run --config config/config.toml
 ```
 
 The optional `--config` flag specifies the path to the configuration file, which contains settings for the workflow.
@@ -45,6 +45,17 @@ If the flag is not provided, the workflow will look for a default configuration 
 
 ## Running individual steps
 
+The individual steps of the workflow can be run using the following commands:
+1. Run the ETL job:
+   `workflow etl --config config/config.toml`
+2. Run all data processing steps:  
+   `workflow process --config config/config.toml`
+
+## Remaining Steps
+
+- [ ] Detect whale calls. Suggest 1) filtering the final trace to 15-30 Hz to remove noise and 2) conduct peak detection on the entire denoised signal. This will allow tracking of whale calls including when pile driving is not occurring. Overlaying periods of pile driving with the whale call detections might yield insights.
+- [ ] Localize the whale calls using the TDOA estimates.
+- [ ] Estimate levels. Compare to the original signal and the denoised signal. This will help us understand how much of the pile driving noise is being removed by the filtering step.
 
 <!-- 
 9. Pulse compress the denoised signals with the whale call:  
