@@ -1,6 +1,7 @@
 [metadata]
 sensor_data = "data/sensors.csv"
 turbine_data = "data/turbines.csv"
+source_pile = "AN36"
 
 [etl]
 distances = "data/distances.csv"

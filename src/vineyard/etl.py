@@ -36,53 +36,77 @@ class ETLConfig(BaseModel):
     bathymetry: BathymetryConfig = BathymetryConfig()
     distances: Path = "data/distances.csv"
     sensor_data: Path | None = None
+    turbine_data: Path | None = None
+    source_pile: str | None = None
     inventory_config: Path = "config/inventory.toml"
     inventory_dir: Path = "data/acoustic"
     ref_mooring: str = "VLA1"
 
 
-def append_enu_coordinates(sensor_data_path: Path, ref_mooring: str = "VLA1") -> None:
+def modify_sensor_table(
+    sensor_data_path: Path,
+    turbine_path: Path,
+    source_pile: str,
+    ref_mooring: str = "VLA1",
+) -> None:
     """Load sensor positions from equipment config and compute ENU coordinates."""
     df = pl.read_csv(sensor_data_path)
 
-    if (
+    if not (
         "easting" in df.columns
         and "northing" in df.columns
         and "ref_lat" in df.columns
         and "ref_lon" in df.columns
     ):
-        logger.info("ENU coordinates already exist in the sensor data. Skipping.")
-        return
-
-    # Use VLA1 as reference point for coordinate transformation
-    lat0, lon0 = (
-        df.filter(pl.col("mooring_name") == "VLA1")
-        .select(["latitude", "longitude"])
-        .row(0)
-    )
-
-    df = df.with_columns(
-        pl.struct("latitude", "longitude")
-        .map_elements(
-            lambda cols: dict(
-                zip(
-                    ("easting", "northing"),
-                    compute_northing_easting(
-                        cols["latitude"], cols["longitude"], lat0, lon0
-                    ),
-                )
-            ),
-            return_dtype=pl.Struct(
-                [
-                    pl.Field("easting", pl.Float64),
-                    pl.Field("northing", pl.Float64),
-                ]
-            ),
+        logger.info("Computing ENU coordinates for sensor positions...")
+        lat0, lon0 = (
+            df.filter(pl.col("mooring_name") == ref_mooring)
+            .select(["latitude", "longitude"])
+            .row(0)
         )
-        .alias("result"),
-        pl.lit(lat0, dtype=pl.Float64).alias("ref_lat"),
-        pl.lit(lon0, dtype=pl.Float64).alias("ref_lon"),
-    ).unnest("result")
+
+        df = df.with_columns(
+            pl.struct("latitude", "longitude")
+            .map_elements(
+                lambda cols: dict(
+                    zip(
+                        ("easting", "northing"),
+                        compute_northing_easting(
+                            cols["latitude"], cols["longitude"], lat0, lon0
+                        ),
+                    )
+                ),
+                return_dtype=pl.Struct(
+                    [
+                        pl.Field("easting", pl.Float64),
+                        pl.Field("northing", pl.Float64),
+                    ]
+                ),
+            )
+            .alias("result"),
+            pl.lit(lat0, dtype=pl.Float64).alias("ref_lat"),
+            pl.lit(lon0, dtype=pl.Float64).alias("ref_lon"),
+        ).unnest("result")
+
+    if not "dist_to_pile_m" in df.columns:
+        logger.info("Computing distance to pile for sensor positions...")
+        turbine_df = pl.read_csv(turbine_path)
+        pile_location = (
+            turbine_df.filter(pl.col("Turbine") == source_pile)
+            .select(["lat", "lon"])
+            .row(0)
+        )
+
+        df = df.with_columns(
+            pl.struct("latitude", "longitude")
+            .map_elements(
+                lambda cols: geodesic(
+                    (cols["latitude"], cols["longitude"]), pile_location
+                ).meters
+            )
+            .alias("dist_to_pile_m")
+        )
+
     df.write_csv(sensor_data_path)
 
 
@@ -222,10 +246,12 @@ def inventory_acoustic_data(config_file: Path) -> None:
 
 
 def run_etl(config: ETLConfig) -> None:
-    bathy_etl(config.bathymetry)
-    compute_distances(config.sensor_data, config.distances)
-    inventory_acoustic_data(config.inventory_config)
-    append_enu_coordinates(config.sensor_data, config.ref_mooring)
+    # bathy_etl(config.bathymetry)
+    # compute_distances(config.sensor_data, config.distances)
+    # inventory_acoustic_data(config.inventory_config)
+    modify_sensor_table(
+        config.sensor_data, config.turbine_data, config.source_pile, config.ref_mooring
+    )
 
 
 def save_bathy_data(

@@ -18,6 +18,7 @@ class MetadataConfig(BaseModel):
 
     sensor_data: Path = "data/sensors.csv"
     turbine_data: Path = "data/turbines.csv"
+    source_pile: str = "AN36"
 
 
 class Config(BaseModel):
@@ -33,6 +34,10 @@ class Config(BaseModel):
         """Set etl_config.sensor_data from metadata_config.sensor_data."""
         if self.etl_config.sensor_data is None:
             self.etl_config.sensor_data = self.metadata_config.sensor_data
+        if self.etl_config.turbine_data is None:
+            self.etl_config.turbine_data = self.metadata_config.turbine_data
+        if self.etl_config.source_pile is None:
+            self.etl_config.source_pile = self.metadata_config.source_pile
         if self.process_config.inventory_path is None:
             self.process_config.inventory_path = self.etl_config.inventory_dir
         return self
