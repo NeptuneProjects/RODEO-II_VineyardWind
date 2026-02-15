@@ -38,9 +38,10 @@ class ETLConfig(BaseModel):
     sensor_data: Path | None = None
     inventory_config: Path = "config/inventory.toml"
     inventory_dir: Path = "data/acoustic"
+    ref_mooring: str = "VLA1"
 
 
-def append_enu_coordinates(sensor_data_path: Path) -> None:
+def append_enu_coordinates(sensor_data_path: Path, ref_mooring: str = "VLA1") -> None:
     """Load sensor positions from equipment config and compute ENU coordinates."""
     df = pl.read_csv(sensor_data_path)
 
@@ -230,7 +231,7 @@ def run_etl(config: ETLConfig) -> None:
     bathy_etl(config.bathymetry)
     compute_distances(config.sensor_data, config.distances)
     inventory_acoustic_data(config.inventory_config)
-    append_enu_coordinates(config.sensor_data)
+    append_enu_coordinates(config.sensor_data, config.ref_mooring)
 
 
 def save_bathy_data(
