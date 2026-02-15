@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Find pile-driving strikes in the dataset using peak-finding."""
-
 import gc
 import logging
 import os
