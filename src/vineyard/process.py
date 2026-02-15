@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Find pile-driving strikes in the dataset using peak-finding."""
 
+import gc
 import logging
 import os
 from collections.abc import Sequence
@@ -13,6 +14,7 @@ import numpy as np
 import polars as pl
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
+from scipy.signal import find_peaks, hilbert
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5, read_hdf5_group
 from tritonoa.data.stream import DataStream
@@ -21,7 +23,7 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.plotting import plot_template
-from vineyard.readers import read_whale_template
+from vineyard.readers import process_datastream, read_whale_template
 from vineyard.signal_proc import denoise_data, find_strikes, sample_delay
 
 
@@ -114,6 +116,14 @@ class TemplateConfig(BaseModel):
     template_data: Path = "data/acoustic/templates/strike_templates.h5"
 
 
+class WhaleDetectionConfig(BaseModel):
+    sensors: list[dict] | None = None
+    channel: int = 5
+    filt_type: str | None = None
+    filt_freq: float | Sequence[float] | None = None
+    output_file: Path = "data/acoustic/whale_detections.csv"
+
+
 class WhaleTemplateConfig(BaseModel):
     """Configuration for whale call templates.
 
@@ -150,6 +160,7 @@ class ProcessConfig(BaseModel):
     template_config: TemplateConfig = Field(alias="template")
     whale_template_config: WhaleTemplateConfig | None = Field(alias="whale_template")
     denoise_config: DenoiseConfig | None = Field(alias="denoise")
+    whale_detection_config: WhaleDetectionConfig | None = Field(alias="whale_detection")
 
     @model_validator(mode="after")
     def convert_to_np_datetime(self) -> "ProcessConfig":
@@ -361,18 +372,16 @@ def build_templates(
             filt_type=config.filt_type,
             filt_freq=config.filt_freq,
         )
-        corr_matrix, shift_matrix, _ = readers.read_xcorr_data(strike_corr_path, name)
+        corr_matrix, _, _ = readers.read_xcorr_data(strike_corr_path, name)
         _build_sensor_templates_rolling(
             ds,
             strike_index,
             corr_matrix,
-            shift_matrix,
             config.template_data,
             name,
             config.buffer_start,
             config.buffer_end,
             window_size=config.window_size,
-            max_shift=config.max_shift,
             plot_dir=config.plot_dir,
             ylim=ylim,
         )
@@ -618,6 +627,54 @@ def denoise_strikes(
         ds.write_hdf5(save_dir / f"{sensor['name']}.h5")
 
 
+def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
+    """Detect whale calls in the dataset using the Hilbert transform and peak finding.
+
+    Args:
+        config: WhaleDetectionConfig instance containing the configuration
+            for whale call detection.
+        data_path: Path to the directory containing the denoised data files.
+    """
+    dfs = []
+    for sensor in config.sensors:
+        ds = process_datastream(
+            read_hdf5(data_path / f"{sensor['name']}_pc.h5"),
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
+        )
+        fs = ds.stats.sampling_rate
+
+        cf = np.abs(hilbert(ds.data[config.channel]))
+
+        peaks = find_peaks(
+            cf / np.max(cf),
+            height=sensor["threshold"],
+            distance=int(sensor["distance_s"] * fs),
+        )[0]
+        times = ds.time_vector[peaks]
+        del cf, ds
+        gc.collect()
+        logging.info(f"Detected {len(peaks)} whale calls on sensor {sensor['name']}.")
+
+        dfs.append(
+            pl.DataFrame(
+                {
+                    "sensor": sensor["name"],
+                    "timestamp": times,
+                    "sample": peaks,
+                    "channel": config.channel,
+                    "threshold": sensor["threshold"],
+                    "distance_s": sensor["distance_s"],
+                }
+            )
+        )
+
+    df = pl.concat(dfs).with_columns(
+        pl.col("timestamp").dt.epoch(time_unit="s").alias("unix_time_sec")
+    )
+    df.write_csv(config.output_file)
+
+
 def _enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
     """Ensure all arrays in the list have the same size by padding with zeros."""
     max_length = max(arr.shape[0] for arr in arrays)
@@ -763,6 +820,9 @@ def process_data(config: ProcessConfig) -> None:
     )
     extract_whale_templates(config.whale_template_config, config.inventory_path)
     pulse_compress(config.denoise_config, config.whale_template_config)
+    detect_whale_calls(
+        config.whale_detection_config, config.denoise_config.denoised_data
+    )
 
 
 def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -> None:
