@@ -177,19 +177,6 @@ def construct_template_signal(
     return template_signal
 
 
-def convert_to_strain_rate(
-    data: NDArray[np.float64],
-    scale_factor: float,
-    calibration_factor: float,
-    sampling_rate_hz: float,
-    gauge_length_m: float,
-) -> np.ndarray:
-    conversion_factor = (
-        scale_factor * calibration_factor * sampling_rate_hz / gauge_length_m
-    )
-    return data * conversion_factor
-
-
 def denoise_data(
     signal: ArrayLike,
     strike_index: pl.DataFrame,
