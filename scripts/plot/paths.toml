@@ -6,11 +6,6 @@
 # Figures
 figures = "./reports/figures"
 fig_style = "./config/scirep_fig_style.mplstyle"
-# Equipment
-distance_lut = "./config/experiment/distances.csv"
-# DAS Location
-das_location_raw = "./data/raw/DAS_final.h5"
-das_location = "./config/experiment/das_location.csv"
 # Acoustic Data Inventory
 inventory_config = "./config/inventory.toml"
 vla1_inventory = "./data/acoustic/inventory_SHRU905_VLA1.csv"
@@ -26,8 +21,6 @@ acoustic_data = "./data/acoustic/"
 denoised_data = "./data/acoustic/denoised"
 pulse_comp_data = "./data/acoustic/pulse_compressed"
 tdoa_data = "./data/acoustic/tdoa"
-# 3DVHA Motion Data
-vector_sensor_imu_processed = "data/acoustic/3dvha/vector_sensor_imu.csv"
 # Dispersion data path
 dispersion_dir = "./data/dispersion"
 # Root path for pulse metrics
