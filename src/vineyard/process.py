@@ -16,7 +16,7 @@ from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
 from scipy.signal import find_peaks, hilbert
 from tqdm import tqdm
-from tritonoa.data.reader import read_and_process, read_hdf5, read_hdf5_group
+from tritonoa.data.reader import read_and_process, read_hdf5
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
@@ -670,7 +670,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
         )
 
     df = pl.concat(dfs).with_columns(
-        pl.col("timestamp").dt.epoch(time_unit="s").alias("unix_time_sec")
+        pl.col("timestamp").dt.epoch(time_unit="us").alias("unix_time_us")
     )
     df.write_csv(config.output_file)
 
