@@ -16,7 +16,25 @@ from tritonoa.data.reader import read_and_process, read_hdf5_group
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-from vineyard.signal_proc import process_datastream
+
+def process_datastream(
+    ds: DataStream,
+    detrend: bool = True,
+    taper_pc: float | None = None,
+    dec_factor: int | None = None,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    detrend_kwargs: dict = {},
+) -> DataStream:
+    if detrend:
+        ds.detrend(**detrend_kwargs)
+    if taper_pc is not None:
+        ds.taper(max_percentage=taper_pc)
+    if dec_factor is not None:
+        ds.decimate(dec_factor)
+    if filt_type is not None and filt_freq is not None:
+        ds.filter(filt_type, filt_freq)
+    return ds
 
 
 def read_bathymetry(

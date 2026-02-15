@@ -9,19 +9,20 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from numpy.typing import ArrayLike, NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
-from scipy.signal import find_peaks, hilbert
+from scipy.signal import correlate, correlation_lags, find_peaks, hilbert
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5
 from tritonoa.data.stream import DataStream
+from tritonoa.data.signal import taper
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.plotting import plot_template
 from vineyard.readers import process_datastream, read_whale_template
-from vineyard.signal_proc import denoise_data, find_strikes, sample_delay
 
 
 class DenoiseConfig(BaseModel):
@@ -269,7 +270,7 @@ def _build_strikes_df_per_sensor(
         filt_freq=filt_freq,
     )
 
-    peaks = find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_s)
+    peaks = _find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_s)
     samples_since_reference = (
         (ds.time_vector[peaks] - reference_time)
         / np.timedelta64(1, "s")
@@ -562,6 +563,86 @@ def _build_sensor_templates_rolling(
     logging.info(f"Rolling templates for {name.upper()} saved to {template_data_path}")
 
 
+def _construct_template_signal(
+    signal: ArrayLike,
+    strike_inds: list[int],
+    templates: list[NDArray[np.float64]],
+    start_samples: list[int],
+    end_samples: list[int],
+    taper_pc: float | None = None,
+) -> np.ndarray:
+    """Construct a template signal by placing templates at the given strike
+    indices.
+
+    This function handles overlapping templates by trimming the template
+    from the beginning, ensuring that the strike indices remain consistent
+    with the original signal.
+
+    Args:
+        signal: The original signal to which the templates will be added.
+        strike_inds: List of indices corresponding to the strikes in the signal.
+        templates: List of template signals corresponding to each strike index.
+        start_samples: List of start sample indices for each template.
+        end_samples: List of end sample indices for each template.
+        taper_pc: Optional percentage for tapering the templates to reduce
+            edge effects.
+
+    Returns:
+        A signal constructed by adding the templates at the specified strike
+            indices, with handling for overlapping templates.
+    """
+    template_signal = np.zeros_like(signal)
+    previous_end = 0
+
+    for strike_ind, start_ind, end_ind in tqdm(
+        zip(strike_inds, start_samples, end_samples),
+        desc="Constructing template signal",
+        total=len(strike_inds),
+    ):
+        template = templates[strike_ind]
+
+        # Handle overlap by trimming template from the beginning, not shifting position
+        # However, if the previous placement would consume the entire current window
+        # (likely due to noise), trust the current index and place it normally
+        template_offset = 0
+        if start_ind < previous_end < end_ind:
+            # Normal overlap: trim from beginning
+            template_offset = previous_end - start_ind
+            start_ind = previous_end
+
+        # Apply offset to skip overlapping part of template
+        template = template[template_offset:]
+
+        min_length = min(len(template), end_ind - start_ind)
+        updated_template = template[:min_length]
+        window = (
+            taper(len(updated_template), max_percentage=taper_pc)
+            if taper_pc is not None
+            else np.ones(len(updated_template))
+        )
+
+        template_signal[start_ind : start_ind + min_length] += updated_template * window
+        previous_end = start_ind + min_length
+
+    return template_signal
+
+
+def _denoise_data(
+    signal: ArrayLike,
+    strike_index: pl.DataFrame,
+    templates: list[NDArray[np.float64]],
+    start_samples: list[int],
+    end_samples: list[int],
+    taper_pc: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    strike_inds = strike_index["strike_index"].to_list()
+    template_signal = _construct_template_signal(
+        signal, strike_inds, templates, start_samples, end_samples, taper_pc=taper_pc
+    )
+    error = signal - template_signal
+    return error, template_signal
+
+
 def denoise_strikes(
     config: DenoiseConfig,
     start_time: np.datetime64,
@@ -599,7 +680,7 @@ def denoise_strikes(
                 buffer_end=config.buffer_end,
             )
         )
-        x_filtered, y = denoise_data(
+        x_filtered, y = _denoise_data(
             ds.data[0],
             strike_index,
             templates,
@@ -727,6 +808,23 @@ def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -
                 logging.info(
                     f"Saved template for whale {call_type} on {sensor_name} to {config.template_data}"
                 )
+
+
+def _find_strikes(
+    data: NDArray[np.float64],
+    sampling_rate: float,
+    threshold: float,
+    distance_sec: float,
+) -> NDArray[np.int32]:
+    def _characteristic_function(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        xsq = x**2
+        return xsq / np.max(xsq)
+
+    cf = _characteristic_function(data)
+    peaks = find_peaks(
+        cf, height=threshold, distance=int(distance_sec * sampling_rate)
+    )[0]
+    return peaks
 
 
 def _get_anchor_trace(corr_matrix_window: np.ndarray) -> int:
@@ -876,6 +974,22 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
             f"Pulse compression completed for sensor: {sensor_name}. "
             f"Saved to {denoise_config.denoised_data / f'{sensor_name}_pc.h5'}"
         )
+
+
+def sample_delay(sig1: NDArray, sig2: NDArray) -> int:
+    """Calculate the sample delay between two signals using cross-correlation.
+
+    Args:
+        sig1: First signal.
+        sig2: Second signal.
+
+    Returns:
+        Time delay in seconds between the two signals.
+    """
+    xcorr = correlate(sig1, sig2, mode="same")
+    lags = correlation_lags(len(sig1), len(sig2), mode="same")
+    peak_lag = lags[np.argmax(xcorr)]
+    return peak_lag
 
 
 def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
