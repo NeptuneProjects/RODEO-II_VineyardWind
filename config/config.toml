@@ -59,7 +59,7 @@ time_ranges = [
         "2023-12-01T21:47:15.00",
     ],
     [
-        "2023-12-01T22:16:00.00",
+        "2023-12-01T21:51:20.00",
         "2023-12-01T22:26:00.00",
     ],
 ]
@@ -86,6 +86,7 @@ buffer_end = 0.9
 [process.strike.correlation]
 max_workers = 10
 detrend = true
+dec_factor = 20
 taper_pc = 0.05
 filt_type = "bandpass"
 filt_freq = [15.0, 300.0]
@@ -148,3 +149,14 @@ type2 = { start = "2023-12-01T22:25:55.52", end = "2023-12-01T22:25:56.90" }
 channel = 0
 type1 = { start = "2023-12-01T23:14:26.25", end = "2023-12-01T23:14:28.00" }
 type2 = { start = "2023-12-01T22:25:55.08", end = "2023-12-01T22:25:56.39" }
+
+[process.whale_detection]
+sensors = [
+    { name = "3dvha", distance_s = 7.0, threshold = 0.25 },
+    { name = "vla1", distance_s = 7.0, threshold = 0.15 },
+    { name = "vla2", distance_s = 7.0, threshold = 0.3 },
+]
+channel = 5
+filt_type = "bandpass"
+filt_freq = [15.0, 50.0]
+output_file = "data/acoustic/whale_detections.csv"
