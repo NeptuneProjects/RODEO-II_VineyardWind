@@ -5,20 +5,19 @@ import string
 import cmasher as cmr
 import cmocean as cmo
 import matplotlib
-from matplotlib import font_manager
 import matplotlib.colors as colors
+import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
+import scipy.signal as signal
+from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Polygon
-import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from mpl_toolkits.basemap import Basemap
-import numpy as np
 from numpy.typing import NDArray
-import pandas as pd
 from scipy.interpolate import interp1d
-import scipy.signal as signal
-import scipy.stats
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
@@ -955,8 +954,8 @@ def plot_study_area(
     bathy_data: NDArray[np.float64],
     lonvec: NDArray[np.float64],
     latvec: NDArray[np.float64],
-    equipment_df: pd.DataFrame | None = None,
-    turbines_df: pd.DataFrame | None = None,
+    equipment_df: pl.DataFrame | None = None,
+    turbines_df: pl.DataFrame | None = None,
     active_turbine: dict | None = None,
     bounds: list[list[float]] | None = None,
     ax: Axes | None = None,
