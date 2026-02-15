@@ -6,6 +6,7 @@ turbine_data = "data/turbines.csv"
 distances = "data/distances.csv"
 inventory_config = "config/inventory.toml"
 inventory_dir = "data/acoustic/"
+ref_mooring = "VLA1"
 
 [etl.bathymetry]
 bounds = [[-71.0, -68.999], [39.5, 41.601]]
@@ -158,5 +159,14 @@ sensors = [
 ]
 channel = 5
 filt_type = "bandpass"
-filt_freq = [15.0, 50.0]
+filt_freq = [15.0, 50.0] # Hz
 output_file = "data/acoustic/whale_detections.csv"
+
+[tdoa]
+localization_file = "data/acoustic/tdoa/localization.csv"
+reference_site = "vla1"
+ambiguity_lower_bound = 90.0                              # degrees
+ambiguity_upper_bound = 270.0                             # degrees
+dwdt_threshold = 0.25                                     # degrees per second
+smoothing_window = 10                                     # number of calls
+speed_upper_bound = 35.0                                  # km/h
