@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 import numpy.typing as npt
 import polars as pl
+import pymap3d as pm
 from geopy.distance import geodesic
 from pydantic import BaseModel, Field
 from tritonoa.data.inventory import Inventory
@@ -37,6 +38,51 @@ class ETLConfig(BaseModel):
     sensor_data: Path | None = None
     inventory_config: Path = "config/inventory.toml"
     inventory_dir: Path = "data/acoustic"
+
+
+def append_enu_coordinates(sensor_data_path: Path) -> None:
+    """Load sensor positions from equipment config and compute ENU coordinates."""
+    df = pl.read_csv(sensor_data_path)
+
+    if (
+        "easting" in df.columns
+        and "northing" in df.columns
+        and "ref_lat" in df.columns
+        and "ref_lon" in df.columns
+    ):
+        logger.info("ENU coordinates already exist in the sensor data. Skipping.")
+        return
+
+    # Use VLA1 as reference point for coordinate transformation
+    lat0, lon0 = (
+        df.filter(pl.col("mooring_name") == "VLA1")
+        .select(["latitude", "longitude"])
+        .row(0)
+    )
+
+    df = df.with_columns(
+        pl.struct("latitude", "longitude")
+        .map_elements(
+            lambda cols: dict(
+                zip(
+                    ("easting", "northing"),
+                    compute_northing_easting(
+                        cols["latitude"], cols["longitude"], lat0, lon0
+                    ),
+                )
+            ),
+            return_dtype=pl.Struct(
+                [
+                    pl.Field("easting", pl.Float64),
+                    pl.Field("northing", pl.Float64),
+                ]
+            ),
+        )
+        .alias("result"),
+        pl.lit(lat0, dtype=pl.Float64).alias("ref_lat"),
+        pl.lit(lon0, dtype=pl.Float64).alias("ref_lon"),
+    ).unnest("result")
+    df.write_csv(sensor_data_path)
 
 
 def bathy_etl(config: BathymetryConfig) -> None:
@@ -103,6 +149,18 @@ def compute_distances(sensor_data_path: Path, output_path: Path) -> pl.DataFrame
 
     distance_df.write_csv(output_path)
     return distance_df
+
+
+def compute_lat_lon(easting, northing, lat0, lon0):
+    """Convert local ENU coordinates back to latitude/longitude."""
+    lat, lon, _ = pm.enu2geodetic(easting, northing, 0, lat0, lon0, 0)
+    return lat, lon
+
+
+def compute_northing_easting(lat, lon, lat0, lon0):
+    """Convert latitude/longitude to local ENU coordinates."""
+    easting, northing, _ = pm.geodetic2enu(lat, lon, 0, lat0, lon0, 0)
+    return easting, northing
 
 
 def download_bathy(
@@ -172,6 +230,7 @@ def run_etl(config: ETLConfig) -> None:
     bathy_etl(config.bathymetry)
     compute_distances(config.sensor_data, config.distances)
     inventory_acoustic_data(config.inventory_config)
+    append_enu_coordinates(config.sensor_data)
 
 
 def save_bathy_data(
