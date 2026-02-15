@@ -9,17 +9,19 @@ from typing import Literal
 from vineyard.config import ConfigModel
 from vineyard.etl import run_etl
 from vineyard.process import process_data
+from vineyard.tdoa import localize
 
 
 def run_workflow(
-    command: Literal["run", "etl", "process"], config_path: Path
+    command: Literal["run", "etl", "process", "localize"], config_path: Path
 ) -> ConfigModel:
     """Run the ETL workflow with the given config file.
 
     Args:
         command: The workflow command to execute. 'run' executes both ETL and
-            processing steps, 'etl' executes only the ETL step, and 'process'
-            executes only the processing step.
+            processing steps, 'etl' executes only the ETL step, 'process'
+            executes only the processing step, and 'localize' executes only
+            the TDOA estimation step.
         config_path: Path to the TOML configuration file.
 
     Returns:
@@ -30,9 +32,11 @@ def run_workflow(
         "run": lambda config: (
             run_etl(config.etl_config),
             process_data(config.process_config),
+            localize(config.tdoa_config),
         ),
         "etl": lambda config: run_etl(config.etl_config),
         "process": lambda config: process_data(config.process_config),
+        "localize": lambda config: localize(config.tdoa_config),
     }
 
     with open(config_path, "rb") as f:
@@ -51,11 +55,12 @@ def main() -> None:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=["run", "etl", "process"],
+        choices=["run", "etl", "process", "localize"],
         help=(
             "The workflow command to execute. 'run' executes both ETL and "
-            "processing steps, 'etl' executes only the ETL step, and 'process' "
-            "executes only the processing step."
+            "processing steps, 'etl' executes only the ETL step, 'process' "
+            "executes only the processing step, and 'localize' executes only "
+            "the TDOA estimation step."
         ),
     )
     parser.add_argument(
