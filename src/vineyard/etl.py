@@ -152,12 +152,6 @@ def compute_distances(sensor_data_path: Path, output_path: Path) -> pl.DataFrame
     return distance_df
 
 
-def compute_lat_lon(easting, northing, lat0, lon0):
-    """Convert local ENU coordinates back to latitude/longitude."""
-    lat, lon, _ = pm.enu2geodetic(easting, northing, 0, lat0, lon0, 0)
-    return lat, lon
-
-
 def compute_northing_easting(lat, lon, lat0, lon0):
     """Convert latitude/longitude to local ENU coordinates."""
     easting, northing, _ = pm.geodetic2enu(lat, lon, 0, lat0, lon0, 0)

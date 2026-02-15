@@ -83,23 +83,40 @@ def read_denoise_data(
     return ds, strike_index, templates, start_samples, end_samples
 
 
-def read_sensor_locations(file: Path) -> pd.DataFrame:
-    """Read the sensor locations from a CSV file.
-
-    Args:
-        file (Path): Path to the CSV file.
-    Returns:
-        Dataframe with sensor locations in latitudes/longitudes.
-    """
-    logging.info(f"Reading file: {file}")
-    df = pd.read_csv(file)
-    return df.drop(index=[1, 2, 3, 4]).rename(
-        columns={
-            "Latitude [dd]": "latitude",
-            "Longitude [dd]": "longitude",
-            "Depth [m]": "depth",
-        }
+def read_distances(lut_file: Path) -> tuple[float, float, float]:
+    distance_lut = pl.read_csv(lut_file)
+    d_3dvha_vla1 = (
+        distance_lut.filter(pl.col("from_equipment") == "3DVHA")
+        .filter(pl.col("to_equipment") == "VLA1")["distance_meters"]
+        .item()
     )
+    d_3dvha_vla2 = (
+        distance_lut.filter(pl.col("from_equipment") == "3DVHA")
+        .filter(pl.col("to_equipment") == "VLA2")["distance_meters"]
+        .item()
+    )
+    d_vla1_vla2 = (
+        distance_lut.filter(pl.col("from_equipment") == "VLA1")
+        .filter(pl.col("to_equipment") == "VLA2")["distance_meters"]
+        .item()
+    )
+    return d_3dvha_vla1, d_3dvha_vla2, d_vla1_vla2
+
+
+def read_sensor_positions(
+    sensor_data_file: Path,
+) -> tuple[list[float], list[float], float, float]:
+    """Load sensor positions from equipment config and compute ENU coordinates."""
+    df = pl.read_csv(sensor_data_file)
+
+    lat0 = df["ref_lat"].head(1).item()
+    lon0 = df["ref_lon"].head(1).item()
+
+    # Return sensor positions (excluding last row which is reference) and reference lat/lon
+    sensor_eastings = df["easting"].unique().to_list()
+    sensor_northings = df["northing"].unique().to_list()
+
+    return sensor_eastings, sensor_northings, lat0, lon0
 
 
 def read_strike_data(
@@ -219,9 +236,22 @@ def read_turbine_locations(file: Path) -> pd.DataFrame:
     )
 
 
-def read_whale_template(
-    template_path: Path, sensor: str, call_type: str
-) -> DataStream:
+def read_whale_call_times(whale_call_data: Path):
+    df = pl.read_csv(whale_call_data)
+
+    times = {}
+
+    for sensor in df["sensor"].unique():
+        times[sensor] = (
+            df.filter(pl.col("sensor") == sensor)["timestamp"]
+            .str.to_datetime()
+            .to_numpy()
+        )
+
+    return times
+
+
+def read_whale_template(template_path: Path, sensor: str, call_type: str) -> DataStream:
     """Read a whale call template from an HDF5 file.
 
     Args:
