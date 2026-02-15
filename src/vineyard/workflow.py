@@ -6,15 +6,41 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Literal
 
-from vineyard.config import ConfigModel
-from vineyard.etl import run_etl
-from vineyard.process import process_data
-from vineyard.tdoa import localize
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from vineyard.etl import ETLConfig, run_etl
+from vineyard.process import ProcessConfig, process_data
+from vineyard.tdoa import LocalizationConfig, localize
+
+
+class MetadataConfig(BaseModel):
+    """Configuration for sensor metadata."""
+
+    sensor_data: Path = "data/sensors.csv"
+    turbine_data: Path = "data/turbines.csv"
+
+
+class Config(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    metadata_config: MetadataConfig = Field(alias="metadata")
+    etl_config: ETLConfig = Field(alias="etl")
+    process_config: ProcessConfig = Field(alias="process")
+    tdoa_config: LocalizationConfig = Field(alias="tdoa")
+
+    @model_validator(mode="after")
+    def sync_attributes(self) -> "Config":
+        """Set etl_config.sensor_data from metadata_config.sensor_data."""
+        if self.etl_config.sensor_data is None:
+            self.etl_config.sensor_data = self.metadata_config.sensor_data
+        if self.process_config.inventory_path is None:
+            self.process_config.inventory_path = self.etl_config.inventory_dir
+        return self
 
 
 def run_workflow(
     command: Literal["run", "etl", "process", "localize"], config_path: Path
-) -> ConfigModel:
+) -> Config:
     """Run the ETL workflow with the given config file.
 
     Args:
@@ -40,7 +66,7 @@ def run_workflow(
     }
 
     with open(config_path, "rb") as f:
-        config = ConfigModel(**tomllib.load(f))
+        config = Config(**tomllib.load(f))
 
     if command not in COMMAND_REGISTRY:
         raise ValueError(f"Invalid command: {command}")

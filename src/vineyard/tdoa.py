@@ -16,7 +16,7 @@ from vineyard.readers import (
 )
 
 
-class TDOAConfig(BaseModel):
+class LocalizationConfig(BaseModel):
     """Configuration for TDOA estimation."""
 
     whale_call_data: Path = "data/acoustic/whale_detections.csv"
@@ -576,7 +576,7 @@ def functions(x0, y0, x1, y1, x2, y2, d01, d02, d12):
     return fn
 
 
-def localize(config: TDOAConfig) -> None:
+def localize(config: LocalizationConfig) -> None:
     """Run the full TDOA localization pipeline and save results to CSV.
 
     Args:
