@@ -171,3 +171,11 @@ ambiguity_upper_bound = 270.0                             # degrees
 dwdt_threshold = 0.25                                     # degrees per second
 smoothing_window = 10                                     # number of calls
 speed_upper_bound = 35.0                                  # km/h
+
+[plotting]
+mpl_style = "config/scirep_fig_style.mplstyle"
+
+[plotting.map]
+bathy_data = "data/bathy/bathy.hdf5"
+output = "reports/figures/maps/map.png"
+dpi = 300
