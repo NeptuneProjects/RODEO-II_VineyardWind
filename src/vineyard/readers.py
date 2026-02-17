@@ -17,6 +17,19 @@ from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 
+def calibrate(
+    cal_file: Path, signal: np.ndarray, fs: float, sensor_type: str
+) -> np.ndarray:
+    """Apply the appropriate calibration based on the sensor type."""
+    match sensor_type:
+        case "3dvha":
+            return calibrate_3dvha(cal_file / f"{sensor_type}_cal.csv", signal, fs)
+        case "vla1" | "vla2":
+            return calibrate_vla(cal_file / f"{sensor_type}_cal.toml", signal, fs)
+        case _:
+            raise ValueError(f"Unknown sensor type {sensor_type} for calibration")
+
+
 def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
     """
     Apply frequency-dependent sensitivity calibration to convert voltage to micropascals.
@@ -47,7 +60,8 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
     signal_fft = np.fft.rfft(signal)
 
     # Get frequency bins for the FFT
-    freq_fft = np.fft.rfftfreq(len(signal), d=1 / fs)
+    n_samples = signal.shape[-1]
+    freq_fft = np.fft.rfftfreq(n_samples, d=1 / fs)
 
     # Interpolate calibration sensitivity to match FFT frequency bins
     sensitivity_interp = np.interp(freq_fft, freq_cal, sensitivity_linear)
@@ -57,8 +71,7 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
     signal_fft_calibrated = signal_fft / sensitivity_interp
 
     # Convert back to time domain
-    calibrated_signal = np.fft.irfft(signal_fft_calibrated, n=len(signal))
-
+    calibrated_signal = np.fft.irfft(signal_fft_calibrated, n=n_samples)
     return calibrated_signal
 
 

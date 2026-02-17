@@ -22,7 +22,6 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.plotting import plot_template
-from vineyard.readers import process_datastream, read_whale_template
 
 
 class DenoiseConfig(BaseModel):
@@ -95,9 +94,6 @@ class StrikeConfig(BaseModel):
         return config
 
 
-class TDOAConfig(BaseModel): ...
-
-
 class TemplateConfig(BaseModel):
     """Configuration for the template-building process."""
 
@@ -151,6 +147,7 @@ class ProcessConfig(BaseModel):
     """Configuration for the strike-finding process."""
 
     inventory_path: Path | None = None
+    calibration_dir: Path | None = None
     start_time: str | None = None
     end_time: str | None = None
     time_ranges: list[list[str]] | None = None
@@ -219,170 +216,6 @@ class Record:
             grp.create_dataset("time_diff", data=self.time_diff)
             grp.create_dataset("corr", data=self.corr)
             grp.create_dataset("shifts", data=self.shifts)
-
-
-def _build_strikes_df_per_sensor(
-    inventory_path: Path,
-    sensor: dict,
-    reference_time: np.datetime64,
-    time_start: np.datetime64,
-    time_end: np.datetime64,
-    strike_index_offset: int = 0,
-    taper_pc: float = 1e-4,
-    dec_factor: int | None = None,
-    filt_type: str = "bandpass",
-    filt_freq: float | Sequence[float] = [100.0, 300.0],
-) -> DataFrame:
-    """Build a DataFrame of detected strikes for a single sensor and time range.
-
-    The DataFrame has the following columns:
-    - sensor: Name of the sensor.
-    - channel: Channel used for detection.
-    - strike_index: Unique index for each detected strike (across all time ranges).
-    - time: Time of the detected strike.
-    - sample: Sample index of the detected strike in the original data.
-
-    Args:
-        inventory_path: Path to the inventory CSV file for the sensor.
-        sensor: Dictionary containing sensor configuration (name, channel, etc.).
-        time_start: Start time of the time range to process.
-        time_end: End time of the time range to process.
-        strike_index_offset: Offset to add to the strike_index to ensure uniqueness across time ranges.
-        taper_pc: Percentage of the data to taper on each side before processing.
-        dec_factor: Decimation factor to apply to the data before processing.
-        filt_type: Type of filter to apply to the data before processing (e.g., "bandpass").
-        filt_freq: Frequency or frequencies to use for filtering the data before processing.
-
-    Returns:
-        A DataFrame containing the detected strikes for the sensor and time range.
-    """
-    name, channel, distance_s, threshold = tuple(sensor.values())
-    logging.info(f"Processing sensor: {name}, channel: {channel}")
-
-    ds = read_and_process(
-        inventory_path,
-        time_start,
-        time_end,
-        channels=channel,
-        taper_pc=taper_pc,
-        dec_factor=dec_factor,
-        filt_type=filt_type,
-        filt_freq=filt_freq,
-    )
-
-    peaks = _find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_s)
-    samples_since_reference = (
-        (ds.time_vector[peaks] - reference_time)
-        / np.timedelta64(1, "s")
-        * ds.stats.sampling_rate
-    ).astype(int)
-
-    logging.info(f"Found {len(peaks)} peaks for sensor {name}.")
-    return DataFrame(
-        {
-            "sensor": name,
-            "channel": channel,
-            "strike_index": np.arange(len(peaks)) + strike_index_offset,
-            "time": ds.time_vector[peaks],
-            "sample": peaks,
-            "global_sample": samples_since_reference,
-        }
-    )
-
-
-def build_strikes_df(
-    config: StrikeConfig,
-    reference_time: np.datetime64,
-    time_ranges: list[tuple[np.datetime64, np.datetime64]],
-    inventory_path: Path,
-) -> None:
-    """Build a DataFrame of detected strikes for all sensors and time ranges,
-    and save it to a CSV file.
-
-    The DataFrame has the following columns:
-    - sensor: Name of the sensor.
-    - channel: Channel used for detection.
-    - strike_index: Unique index for each detected strike (across all sensors and time ranges).
-    - time: Time of the detected strike.
-    - sample: Sample index of the detected strike in the original data.
-
-    Args:
-        config: StrikeConfig instance containing the configuration for strike finding.
-        reference_time: Reference time to use for calculating time differences.
-        time_ranges: List of tuples containing the start and end times for each time range to process.
-        inventory_path: Path to the inventory CSV files for the sensors.
-    """
-    all_dfs = []
-
-    for sensor in config.strike_find_config.sensors:
-        sensor_dfs = []
-        strike_index_offset = 0
-
-        for i, (time_start, time_end) in enumerate(time_ranges):
-            logging.info(
-                f"Processing sensor {sensor['name']}, time range "
-                f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
-            )
-
-            df = _build_strikes_df_per_sensor(
-                inventory_path / f"inventory_{sensor['name']}.csv",
-                sensor,
-                reference_time,
-                time_start,
-                time_end,
-                strike_index_offset,
-                **config.strike_find_config.model_dump(exclude={"sensors"}),
-            )
-            sensor_dfs.append(df)
-            strike_index_offset += len(df)
-
-        all_dfs.extend(sensor_dfs)
-
-    concat(all_dfs).write_csv(config.strike_index)
-    logging.info(f"Strikes extracted and saved to {config.strike_index}.")
-
-
-def build_templates(
-    config: TemplateConfig,
-    start_time: np.datetime64,
-    end_time: np.datetime64,
-    inventory_path: Path,
-    strike_index_path: Path,
-    strike_corr_path: Path,
-) -> None:
-    for sensor in config.sensors:
-        name = sensor["name"]
-        channel = sensor["channel"]
-        ylim = sensor["ylim"]
-        logging.info(f"Processing sensor: {name} channel {channel}.")
-
-        ds, strike_index = readers.read_strike_data(
-            inventory_path / f"inventory_{name}.csv",
-            strike_index_path,
-            name,
-            channel,
-            start_time,
-            end_time,
-            config.buffer_start,
-            config.buffer_end,
-            taper_pc=config.taper_pc,
-            dec_factor=config.dec_factor,
-            filt_type=config.filt_type,
-            filt_freq=config.filt_freq,
-        )
-        corr_matrix, _, _ = readers.read_xcorr_data(strike_corr_path, name)
-        _build_sensor_templates_rolling(
-            ds,
-            strike_index,
-            corr_matrix,
-            config.template_data,
-            name,
-            config.buffer_start,
-            config.buffer_end,
-            window_size=config.window_size,
-            plot_dir=config.plot_dir,
-            ylim=ylim,
-        )
 
 
 def _build_sensor_templates_rolling(
@@ -563,6 +396,176 @@ def _build_sensor_templates_rolling(
     logging.info(f"Rolling templates for {name.upper()} saved to {template_data_path}")
 
 
+def _build_strikes_df_per_sensor(
+    inventory_path: Path,
+    sensor: dict,
+    reference_time: np.datetime64,
+    time_start: np.datetime64,
+    time_end: np.datetime64,
+    strike_index_offset: int = 0,
+    taper_pc: float = 1e-4,
+    dec_factor: int | None = None,
+    filt_type: str = "bandpass",
+    filt_freq: float | Sequence[float] = [100.0, 300.0],
+) -> DataFrame:
+    """Build a DataFrame of detected strikes for a single sensor and time range.
+
+    The DataFrame has the following columns:
+    - sensor: Name of the sensor.
+    - channel: Channel used for detection.
+    - strike_index: Unique index for each detected strike (across all time ranges).
+    - time: Time of the detected strike.
+    - sample: Sample index of the detected strike in the original data.
+
+    Args:
+        inventory_path: Path to the inventory CSV file for the sensor.
+        sensor: Dictionary containing sensor configuration (name, channel, etc.).
+        time_start: Start time of the time range to process.
+        time_end: End time of the time range to process.
+        strike_index_offset: Offset to add to the strike_index to ensure uniqueness across time ranges.
+        taper_pc: Percentage of the data to taper on each side before processing.
+        dec_factor: Decimation factor to apply to the data before processing.
+        filt_type: Type of filter to apply to the data before processing (e.g., "bandpass").
+        filt_freq: Frequency or frequencies to use for filtering the data before processing.
+
+    Returns:
+        A DataFrame containing the detected strikes for the sensor and time range.
+    """
+    name, channel, distance_s, threshold = tuple(sensor.values())
+    logging.info(f"Processing sensor: {name}, channel: {channel}")
+
+    ds = read_and_process(
+        inventory_path,
+        time_start,
+        time_end,
+        channels=channel,
+        taper_pc=taper_pc,
+        dec_factor=dec_factor,
+        filt_type=filt_type,
+        filt_freq=filt_freq,
+    )
+
+    peaks = _find_strikes(ds.data[0], ds.stats.sampling_rate, threshold, distance_s)
+    samples_since_reference = (
+        (ds.time_vector[peaks] - reference_time)
+        / np.timedelta64(1, "s")
+        * ds.stats.sampling_rate
+    ).astype(int)
+
+    logging.info(f"Found {len(peaks)} peaks for sensor {name}.")
+    return DataFrame(
+        {
+            "sensor": name,
+            "channel": channel,
+            "strike_index": np.arange(len(peaks)) + strike_index_offset,
+            "time": ds.time_vector[peaks],
+            "sample": peaks,
+            "global_sample": samples_since_reference,
+        }
+    )
+
+
+def build_strikes_df(
+    config: StrikeConfig,
+    reference_time: np.datetime64,
+    time_ranges: list[tuple[np.datetime64, np.datetime64]],
+    inventory_path: Path,
+) -> None:
+    """Build a DataFrame of detected strikes for all sensors and time ranges,
+    and save it to a CSV file.
+
+    The DataFrame has the following columns:
+    - sensor: Name of the sensor.
+    - channel: Channel used for detection.
+    - strike_index: Unique index for each detected strike (across all sensors and time ranges).
+    - time: Time of the detected strike.
+    - sample: Sample index of the detected strike in the original data.
+
+    Args:
+        config: StrikeConfig instance containing the configuration for strike finding.
+        reference_time: Reference time to use for calculating time differences.
+        time_ranges: List of tuples containing the start and end times for each time range to process.
+        inventory_path: Path to the inventory CSV files for the sensors.
+    """
+    all_dfs = []
+
+    for sensor in config.strike_find_config.sensors:
+        sensor_dfs = []
+        strike_index_offset = 0
+
+        for i, (time_start, time_end) in enumerate(time_ranges):
+            logging.info(
+                f"Processing sensor {sensor['name']}, time range "
+                f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
+            )
+
+            df = _build_strikes_df_per_sensor(
+                inventory_path / f"inventory_{sensor['name']}.csv",
+                sensor,
+                reference_time,
+                time_start,
+                time_end,
+                strike_index_offset,
+                **config.strike_find_config.model_dump(exclude={"sensors"}),
+            )
+            sensor_dfs.append(df)
+            strike_index_offset += len(df)
+
+        all_dfs.extend(sensor_dfs)
+
+    concat(all_dfs).write_csv(config.strike_index)
+    logging.info(f"Strikes extracted and saved to {config.strike_index}.")
+
+
+def build_templates(
+    config: TemplateConfig,
+    start_time: np.datetime64,
+    end_time: np.datetime64,
+    inventory_path: Path,
+    calibration_dir: Path,
+    strike_index_path: Path,
+    strike_corr_path: Path,
+) -> None:
+    for sensor in config.sensors:
+        name = sensor["name"]
+        channel = sensor["channel"]
+        ylim = sensor["ylim"]
+        logging.info(f"Processing sensor: {name} channel {channel}.")
+
+        ds, strike_index = readers.read_strike_data(
+            inventory_path / f"inventory_{name}.csv",
+            strike_index_path,
+            name,
+            channel,
+            start_time,
+            end_time,
+            config.buffer_start,
+            config.buffer_end,
+            taper_pc=config.taper_pc,
+            dec_factor=config.dec_factor,
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
+        )
+        ds.data = readers.calibrate(
+            calibration_dir, ds.data, ds.stats.sampling_rate, name
+        )
+        ds.stats.units = "uPa"
+
+        corr_matrix, _, _ = readers.read_xcorr_data(strike_corr_path, name)
+        _build_sensor_templates_rolling(
+            ds,
+            strike_index,
+            corr_matrix,
+            config.template_data,
+            name,
+            config.buffer_start,
+            config.buffer_end,
+            window_size=config.window_size,
+            plot_dir=config.plot_dir,
+            ylim=ylim,
+        )
+
+
 def _construct_template_signal(
     signal: ArrayLike,
     strike_inds: list[int],
@@ -648,6 +651,7 @@ def denoise_strikes(
     start_time: np.datetime64,
     end_time: np.datetime64,
     inventory_path: Path,
+    calibration_dir: Path,
     strike_index_path: Path,
     template_path: Path,
 ) -> None:
@@ -680,6 +684,11 @@ def denoise_strikes(
                 buffer_end=config.buffer_end,
             )
         )
+        ds.data = readers.calibrate(
+            calibration_dir, ds.data, ds.stats.sampling_rate, sensor["name"]
+        )
+        ds.stats.units = "uPa"
+
         x_filtered, y = _denoise_data(
             ds.data[0],
             strike_index,
@@ -715,7 +724,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
     """
     dfs = []
     for sensor in config.sensors:
-        ds = process_datastream(
+        ds = readers.process_datastream(
             read_hdf5(data_path / f"{sensor['name']}_pc.h5"),
             filt_type=config.filt_type,
             filt_freq=config.filt_freq,
@@ -786,7 +795,9 @@ def _extract_trace(
     return ds.data[0, start_sample:end_sample]
 
 
-def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -> None:
+def extract_whale_templates(
+    config: WhaleTemplateConfig, inventory_path: Path, calibration_dir: Path
+) -> None:
     with h5py.File(config.template_data, "w") as f:
         for sensor_name, sensor_data in config.calls.items():
             channel = sensor_data.pop("channel")
@@ -802,6 +813,13 @@ def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -
                     filt_type=config.filt_type,
                     filt_freq=config.filt_freq,
                 )
+                template.data = readers.calibrate(
+                    calibration_dir,
+                    template.data,
+                    template.stats.sampling_rate,
+                    sensor_name,
+                )
+                template.stats.units = "uPa"
                 g = f.create_group(f"{sensor_name}/{call_type}")
                 template.create_hdf5_dataset(g)
                 logging.info(
@@ -842,33 +860,6 @@ def _get_anchor_trace(corr_matrix_window: np.ndarray) -> int:
     return anchor_index
 
 
-def _get_template_inds(
-    num_signals: int, corrs: np.ndarray, threshold: float = 0.9, window_size: int = 35
-) -> list[list[int]]:
-    """Get indices of templates for each signal based on correlation matrix.
-
-    Args:
-        num_signals (int): Number of signals.
-        corrs (np.ndarray): Correlation matrix.
-        threshold (float): Correlation threshold to consider as template.
-        window_size (int): Number of signals to consider on each side.
-
-    Returns:
-        list[list[int]]: List of lists containing template indices for each signal.
-    """
-    # Create a mask for the window constraint (vectorized)
-    row_idx, col_idx = np.meshgrid(
-        np.arange(num_signals), np.arange(num_signals), indexing="ij"
-    )
-    window_mask = np.abs(row_idx - col_idx) <= window_size
-
-    # Apply correlation threshold and window mask
-    valid_mask = (corrs > threshold) & window_mask
-
-    # Extract indices for each row
-    return [np.where(valid_mask[i])[0].tolist() for i in range(num_signals)]
-
-
 def _get_window_inds(
     sampling_rate: float, peak_index: int, buffer_start: float, buffer_end: float
 ) -> tuple[int, int]:
@@ -884,23 +875,24 @@ def process_data(config: ProcessConfig) -> None:
         config: ProcessConfig instance containing the configuration for
             data processing.
     """
-    build_strikes_df(
-        config.strike_config,
-        config.start_time,
-        config.time_ranges,
-        config.inventory_path,
-    )
-    save_strikes(config.strike_config, config.inventory_path)
-    xcorr_strike_pairs(
-        config.strike_config.strike_corr_config,
-        config.strike_config.strike_data,
-        config.strike_config.strike_corr,
-    )
+    # build_strikes_df(
+    #     config.strike_config,
+    #     config.start_time,
+    #     config.time_ranges,
+    #     config.inventory_path,
+    # )
+    # save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
+    # xcorr_strike_pairs(
+    #     config.strike_config.strike_corr_config,
+    #     config.strike_config.strike_data,
+    #     config.strike_config.strike_corr,
+    # )
     build_templates(
         config.template_config,
         config.start_time,
         config.end_time,
         config.inventory_path,
+        config.calibration_dir,
         config.strike_config.strike_index,
         config.strike_config.strike_corr,
     )
@@ -909,10 +901,13 @@ def process_data(config: ProcessConfig) -> None:
         config.start_time,
         config.end_time,
         config.inventory_path,
+        config.calibration_dir,
         config.strike_config.strike_index,
         config.template_config.template_data,
     )
-    extract_whale_templates(config.whale_template_config, config.inventory_path)
+    # extract_whale_templates(
+    #     config.whale_template_config, config.inventory_path, config.calibration_dir
+    # )
     pulse_compress(config.denoise_config, config.whale_template_config)
     detect_whale_calls(
         config.whale_detection_config, config.denoise_config.denoised_data
@@ -938,10 +933,10 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
         ds.data = ds.data[1]
         ds_orig.data = ds_orig.data[0]
 
-        template_type1 = read_whale_template(
+        template_type1 = readers.read_whale_template(
             config.template_data, sensor_name, "type1"
         ).data.squeeze()
-        template_type2 = read_whale_template(
+        template_type2 = readers.read_whale_template(
             config.template_data, sensor_name, "type2"
         ).data.squeeze()
 
@@ -991,12 +986,15 @@ def sample_delay(sig1: NDArray, sig2: NDArray) -> int:
     return peak_lag
 
 
-def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
+def save_strikes(
+    config: StrikeConfig, inventory_path: Path, calibration_dir: Path
+) -> None:
     """Save the strike data to an HDF5 file.
 
     Args:
         config: StrikeConfig instance containing the configuration for saving strikes.
         inventory_path: Path to the inventory directory containing sensor CSV files.
+        calibration_dir: Path to the calibration directory containing calibration files.
     """
     save_config = config.strike_save_config
 
@@ -1022,7 +1020,10 @@ def save_strikes(config: StrikeConfig, inventory_path: Path) -> None:
                 filt_type=save_config.filt_type,
                 filt_freq=save_config.filt_freq,
             )
-
+            ds.data = readers.calibrate(
+                calibration_dir, ds.data, ds.stats.sampling_rate, sensor
+            )
+            ds.stats.units = "uPa"
             g = file.create_group(f"{sensor}/{strike_index:04d}")
             ds.create_hdf5_dataset(g)
 
