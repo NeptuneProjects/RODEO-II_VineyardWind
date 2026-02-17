@@ -2,11 +2,12 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredText
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MapConfig(BaseModel):
@@ -18,7 +19,25 @@ class MapConfig(BaseModel):
     active_turbine_name: str | None = None
     whale_bearings: Path | None = None
     output: Path = "reports/figures/map.png"
-    dpi: int = 300
+
+
+class SignalTemplateConfig(BaseModel):
+    """Configuration for signal template figure creation."""
+
+    inventory_dir: Path | None = None
+    col_titles: list[str] = ["3DVHA", "VLA1", "VLA2"]
+    whale_sensors: list[dict[str, Any]] | None = None
+    strike_sensors: list[dict[str, Any]] | None = None
+    filt_type: str | None = None
+    filt_freq: list[float] | float | None = None
+    nperseg: int = 4096
+    hop: int = 2048
+    nfft: int | None = None
+    flim: tuple[float, float] | None = None
+    whale_ylim: tuple[float, float] | None = None
+    strike_ylim: tuple[float, float] | None = None
+    figsize: tuple[float, float] = (12.0, 8.0)
+    output: Path = "reports/figures/signal_templates.png"
 
 
 class PlottingConfig(BaseModel):
@@ -30,6 +49,9 @@ class PlottingConfig(BaseModel):
 
     mpl_style: Path | None = None
     map: MapConfig | None = None
+    signal_template: SignalTemplateConfig | None = None
+    savefig_kwargs: dict[str, Any] = {}
+    calibration_dir: Path | None = None
 
 
 def add_panel_label(ax, label: str) -> None:
@@ -55,7 +77,7 @@ def add_panel_label(ax, label: str) -> None:
 
 
 def save_and_show_figure(
-    fig: Figure, output: Path, dpi: int = 300, show: bool = False
+    fig: Figure, output: Path, show: bool = False, savefig_kwargs: dict = {}
 ) -> None:
     """Save figure to file and optionally display it.
 
@@ -66,7 +88,7 @@ def save_and_show_figure(
         show: Whether to display the figure interactively
     """
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=dpi)
+    fig.savefig(output, **savefig_kwargs)
     logging.info(f"Figure saved to {output.resolve()}")
 
     if show:

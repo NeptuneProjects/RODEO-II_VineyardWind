@@ -19,7 +19,6 @@ Public API:
 """
 
 import logging
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 
@@ -29,7 +28,8 @@ from vineyard.figures.common import (
     add_panel_label,
     save_and_show_figure,
 )
-from vineyard.figures.maps import create_and_save_maps, create_maps
+from vineyard.figures.maps import create_map_panels, create_maps
+from vineyard.figures.signals import plot_signal_templates
 
 __all__ = [
     # Common utilities
@@ -38,8 +38,8 @@ __all__ = [
     "add_panel_label",
     "save_and_show_figure",
     # Map figures
+    "create_map_panels",
     "create_maps",
-    "create_and_save_maps",
     # Orchestration
     "make_figures",
 ]
@@ -58,26 +58,42 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
     if config.mpl_style is not None:
         plt.style.use(config.mpl_style)
 
-    figures_created = []
-
-    # Create map figure if configured
     if config.map is not None:
         logging.info("Creating map figure...")
-        create_and_save_maps(
+        fig = create_map_panels(
             bathy_data=config.map.bathy_data,
             sensor_data=config.map.sensor_data,
             turbine_data=config.map.turbine_data,
             active_turbine_name=config.map.active_turbine_name,
             whale_bearings=config.map.whale_bearings,
-            output=config.map.output,
-            dpi=config.map.dpi,
-            show=show,
         )
-        figures_created.append("map")
+        save_and_show_figure(
+            fig, config.map.output, show=show, savefig_kwargs=config.savefig_kwargs
+        )
+        logging.info(f"Map figure saved to {config.map.output}")
 
-    if not figures_created:
-        logging.warning("No figures configured in PlottingConfig")
-    else:
-        logging.info(
-            f"Created {len(figures_created)} figure(s): {', '.join(figures_created)}"
+    if config.signal_template is not None:
+        logging.info("Creating signal template figure...")
+        fig = plot_signal_templates(
+            inventory_dir=config.signal_template.inventory_dir,
+            whale_sensors=config.signal_template.whale_sensors,
+            strike_sensors=config.signal_template.strike_sensors,
+            col_titles=config.signal_template.col_titles,
+            filt_type=config.signal_template.filt_type,
+            filt_freq=config.signal_template.filt_freq,
+            nperseg=config.signal_template.nperseg,
+            hop=config.signal_template.hop,
+            nfft=config.signal_template.nfft,
+            flim=config.signal_template.flim,
+            whale_ylim=config.signal_template.whale_ylim,
+            strike_ylim=config.signal_template.strike_ylim,
+            calibration_dir=config.calibration_dir,
+            figsize=config.signal_template.figsize,
         )
+        save_and_show_figure(
+            fig,
+            config.signal_template.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"Signal template figure saved to {config.signal_template.output}")

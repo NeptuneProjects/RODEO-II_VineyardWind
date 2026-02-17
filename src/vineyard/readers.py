@@ -1,8 +1,8 @@
 """Functions to read data from various file formats used in the project."""
 
-from collections.abc import Sequence
-from datetime import datetime
 import logging
+import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 
 import h5py
@@ -15,6 +15,87 @@ from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5_group
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
+
+
+def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
+    """
+    Apply frequency-dependent sensitivity calibration to convert voltage to micropascals.
+
+    Parameters
+    ----------
+    cal_file : Path
+        Path to calibration file with frequency (Hz) and sensitivity (dB re 1V/uPa) columns
+    signal : np.ndarray
+        Time-series signal in volts
+    fs : float
+        Sampling rate in Hz
+
+    Returns
+    -------
+    np.ndarray
+        Calibrated signal in micropascals
+    """
+    # Load calibration data
+    data = np.loadtxt(cal_file, skiprows=1, delimiter=",")
+    freq_cal = data[:, 0]
+    sensitivity_dB = data[:, 1] - 2.5
+
+    # Convert sensitivity from dB re 1V/uPa to linear scale (V/uPa)
+    sensitivity_linear = 10 ** (sensitivity_dB / 20)
+
+    # Compute FFT of the signal
+    signal_fft = np.fft.rfft(signal)
+
+    # Get frequency bins for the FFT
+    freq_fft = np.fft.rfftfreq(len(signal), d=1 / fs)
+
+    # Interpolate calibration sensitivity to match FFT frequency bins
+    sensitivity_interp = np.interp(freq_fft, freq_cal, sensitivity_linear)
+
+    # Apply calibration: divide voltage by sensitivity to get pressure in uPa
+    # P (uPa) = V (volts) / S (V/uPa)
+    signal_fft_calibrated = signal_fft / sensitivity_interp
+
+    # Convert back to time domain
+    calibrated_signal = np.fft.irfft(signal_fft_calibrated, n=len(signal))
+
+    return calibrated_signal
+
+
+def calibrate_vla(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
+    """
+    Apply frequency-independent sensitivity calibration to convert voltage to micropascals.
+
+    Parameters
+    ----------
+    cal_file : Path
+        Path to TOML calibration file with fixed_gain and sensitivity fields (both in dB)
+    signal : np.ndarray
+        Time-series signal in volts
+    fs : float
+        Sampling rate in Hz (unused but kept for API consistency)
+
+    Returns
+    -------
+    np.ndarray
+        Calibrated signal in micropascals
+    """
+    with open(cal_file, "rb") as f:
+        cal_data = tomllib.load(f)
+
+    fixed_gain_dB = cal_data.get("fixed_gain", 0)
+    sensitivity_dB = cal_data.get("sensitivity", 0)
+
+    # Total system sensitivity in dB re 1V/uPa
+    total_sensitivity_dB = sensitivity_dB + fixed_gain_dB
+
+    # Convert to linear scale (V/uPa)
+    total_sensitivity_linear = 10 ** (total_sensitivity_dB / 20)
+
+    # Apply calibration: P (uPa) = V (volts) / S (V/uPa)
+    calibrated_signal = signal / total_sensitivity_linear / 1e6
+
+    return calibrated_signal
 
 
 def process_datastream(
@@ -279,12 +360,11 @@ def read_whale_template(template_path: Path, sensor: str, call_type: str) -> Dat
     Returns:
         DataStream containing the whale template data.
     """
-    group_name = f"{sensor}_{call_type}"
+    group_name = f"{sensor}/{call_type}"
     logging.info(f"Reading whale template {group_name} from: {template_path}")
     with h5py.File(template_path, "r") as f:
         template_group = f[group_name]
-        ds = read_hdf5_group(template_group)
-    return ds
+        return read_hdf5_group(template_group)
 
 
 def read_xcorr_data(data_path: Path, sensor: str) -> tuple[NDArray, NDArray, NDArray]:

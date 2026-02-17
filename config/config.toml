@@ -2,6 +2,7 @@
 sensor_data = "data/sensors.csv"
 turbine_data = "data/turbines.csv"
 source_pile = "AN36"
+calibration_dir = "data/acoustic/calibration/"
 
 [etl]
 distances = "data/distances.csv"
@@ -139,7 +140,7 @@ taper_pc = 0.15
 
 [process.whale_template.calls.3dvha]
 channel = 7
-type1 = { start = "2023-12-01T23:14:27.7", end = "2023-12-01T23:14:29.2" }
+type1 = { start = "2023-12-01T23:14:27.70", end = "2023-12-01T23:14:29.20" }
 type2 = { start = "2023-12-01T22:25:46.10", end = "2023-12-01T22:25:47.10" }
 
 [process.whale_template.calls.vla1]
@@ -173,9 +174,31 @@ smoothing_window = 10                                     # number of calls
 speed_upper_bound = 35.0                                  # km/h
 
 [plotting]
+savefig_kwargs = { bbox_inches = "tight", dpi = 300, facecolor = "white" }
 mpl_style = "config/scirep_fig_style.mplstyle"
 
-[plotting.map]
-bathy_data = "data/bathy/bathy.hdf5"
-output = "reports/figures/maps/map.png"
-dpi = 300
+# [plotting.map]
+# output = "reports/figures/maps/map.png"
+
+[plotting.signal_template]
+col_titles = ["3DVHA", "VLA1", "VLA2"]
+whale_sensors = [
+    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+]
+strike_sensors = [
+    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+]
+filt_type = "bandpass"
+filt_freq = [9.0, 110.0]
+nperseg = 16384
+hop = 32
+flim = [10.0, 90.0]
+whale_ylim = [-3e7, 3e7]
+strike_ylim = [-3e8, 3e8]
+figsize = [9, 6]
+
+output = "reports/figures/signal_templates.png"

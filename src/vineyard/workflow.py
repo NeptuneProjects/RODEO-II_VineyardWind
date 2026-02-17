@@ -20,6 +20,7 @@ class MetadataConfig(BaseModel):
     sensor_data: Path = "data/sensors.csv"
     turbine_data: Path = "data/turbines.csv"
     source_pile: str = "AN36"
+    calibration_dir: Path = "data/acoustic/calibration/"
 
 
 class Config(BaseModel):
@@ -42,12 +43,20 @@ class Config(BaseModel):
         if self.process_config.inventory_path is None:
             self.process_config.inventory_path = self.etl_config.inventory_dir
 
-        # Sync plotting config values from other sections if map is configured
+        if self.plotting_config.calibration_dir is None:
+            self.plotting_config.calibration_dir = self.metadata_config.calibration_dir
+
         if self.plotting_config.map is not None:
+            if self.plotting_config.map.bathy_data is None:
+                self.plotting_config.map.bathy_data = (
+                    self.etl_config.bathymetry.output_path
+                )
             if self.plotting_config.map.sensor_data is None:
                 self.plotting_config.map.sensor_data = self.metadata_config.sensor_data
             if self.plotting_config.map.turbine_data is None:
-                self.plotting_config.map.turbine_data = self.metadata_config.turbine_data
+                self.plotting_config.map.turbine_data = (
+                    self.metadata_config.turbine_data
+                )
             if self.plotting_config.map.active_turbine_name is None:
                 self.plotting_config.map.active_turbine_name = (
                     self.metadata_config.source_pile
@@ -55,6 +64,12 @@ class Config(BaseModel):
             if self.plotting_config.map.whale_bearings is None:
                 self.plotting_config.map.whale_bearings = (
                     self.tdoa_config.localization_file
+                )
+
+        if self.plotting_config.signal_template is not None:
+            if self.plotting_config.signal_template.inventory_dir is None:
+                self.plotting_config.signal_template.inventory_dir = (
+                    self.etl_config.inventory_dir
                 )
 
         return self
