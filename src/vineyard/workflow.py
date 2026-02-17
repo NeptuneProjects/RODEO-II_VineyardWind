@@ -33,16 +33,22 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def sync_attributes(self) -> "Config":
-        """Set etl_config.sensor_data from metadata_config.sensor_data."""
+        """Ensure that attributes across different config sections are consistent."""
+        # ETL sync
         if self.etl_config.sensor_data is None:
             self.etl_config.sensor_data = self.metadata_config.sensor_data
         if self.etl_config.turbine_data is None:
             self.etl_config.turbine_data = self.metadata_config.turbine_data
         if self.etl_config.source_pile is None:
             self.etl_config.source_pile = self.metadata_config.source_pile
+
+        # Processing sync
         if self.process_config.inventory_path is None:
             self.process_config.inventory_path = self.etl_config.inventory_dir
+        if self.process_config.calibration_dir is None:
+            self.process_config.calibration_dir = self.metadata_config.calibration_dir
 
+        # Plotting sync
         if self.plotting_config.calibration_dir is None:
             self.plotting_config.calibration_dir = self.metadata_config.calibration_dir
 

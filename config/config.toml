@@ -182,6 +182,7 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 
 [plotting.signal_template]
 col_titles = ["3DVHA", "VLA1", "VLA2"]
+
 whale_sensors = [
     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
@@ -199,6 +200,16 @@ hop = 32
 flim = [10.0, 90.0]
 whale_ylim = [-3e7, 3e7]
 strike_ylim = [-3e8, 3e8]
-figsize = [9, 6]
+figsize = [9, 9]
 
 output = "reports/figures/signal_templates.png"
+
+[plotting.signal_template.example_signal]
+name = "vla1"
+channel = 0
+time_start = "2023-12-01T21:06:15.00"
+time_end = "2023-12-01T21:08:15"
+start_buffer = 60.0
+end_buffer = 60.0
+datadir = "data/acoustic/denoised"
+ylim = [-7e7, 7e7]

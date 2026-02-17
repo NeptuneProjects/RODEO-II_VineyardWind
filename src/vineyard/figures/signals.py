@@ -6,9 +6,11 @@ import scipy.signal as signal
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from tritonoa.data.reader import read_hdf5
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
 import vineyard.readers as readers
+from vineyard.figures.common import add_panel_label
 
 
 def next_pow2(n: int) -> int:
@@ -74,6 +76,7 @@ def _plot_sensor_column(
 
 def plot_signal_templates(
     inventory_dir: Path,
+    example_signal: dict[str, any],
     whale_sensors: list[dict[str, any]],
     strike_sensors: list[dict[str, any]],
     col_titles: list[str],
@@ -89,11 +92,57 @@ def plot_signal_templates(
     figsize: tuple[float, float] = (12.0, 8.0),
 ) -> Figure:
 
+    if nfft is None:
+        nfft = next_pow2(nperseg)
+
     fig = plt.figure(figsize=figsize)
+
+    # Collect spectrogram axes for colorbar
+    spec_image = None
 
     # Create main grid: 2 rows, 3 columns
     # Top row for whale signals, bottom row for other signals
-    main_gs = GridSpec(2, 3, figure=fig, height_ratios=[1, 1], hspace=0.3, wspace=0.15)
+    main_gs = GridSpec(
+        3, 3, figure=fig, height_ratios=[1, 1, 1], hspace=0.3, wspace=0.15
+    )
+
+    sub_gs_example = GridSpecFromSubplotSpec(
+        2, 1, subplot_spec=main_gs[0, :], hspace=0.0, height_ratios=[0.3, 0.7]
+    )
+    ax_time_example = fig.add_subplot(sub_gs_example[0])
+    ax_spec_example = fig.add_subplot(sub_gs_example[1])
+
+    time_start = np.datetime64(example_signal["time_start"], TIME_PRECISION)
+    time_end = np.datetime64(example_signal["time_end"], TIME_PRECISION)
+    ds = (
+        read_hdf5(Path(example_signal["datadir"]) / f"{example_signal['name']}.h5")
+        .trim(time_start, time_end)
+        .filter(filt_type, filt_freq)
+    )
+    fs = ds.stats.sampling_rate
+    times = np.arange(ds.data.shape[1]) / fs
+    data = ds.data[0]
+
+    im = _plot_sensor_column(
+        ax_time=ax_time_example,
+        ax_spec=ax_spec_example,
+        times=times,
+        data=data,
+        fs=fs,
+        col_title=f"Fin whale vocalizations and pile driving at VLA1",
+        is_first_col=True,
+        nperseg=nperseg,
+        hop=hop,
+        nfft=nfft,
+        flim=flim,
+        ylim=example_signal["ylim"],
+        vmin=70,
+        vmax=130,
+    )
+    if spec_image is None:
+        spec_image = im
+    ax_spec_example.set_xlabel(f"Time (s) after {time_start} (UTC)")
+    add_panel_label(ax_spec_example, "a")
 
     # Create nested subgrids for each column in both rows
     # Each column will have time series above spectrogram
@@ -102,7 +151,7 @@ def plot_signal_templates(
     for i in range(3):
         # Top row (whale signals)
         sub_gs_whale = GridSpecFromSubplotSpec(
-            2, 1, subplot_spec=main_gs[0, i], hspace=0.0, height_ratios=[0.3, 0.7]
+            2, 1, subplot_spec=main_gs[1, i], hspace=0.0, height_ratios=[0.3, 0.7]
         )
         ax_time_whale = fig.add_subplot(sub_gs_whale[0])
         ax_spec_whale = fig.add_subplot(sub_gs_whale[1])
@@ -110,17 +159,11 @@ def plot_signal_templates(
 
         # Bottom row (other signals)
         sub_gs_other = GridSpecFromSubplotSpec(
-            2, 1, subplot_spec=main_gs[1, i], hspace=0.0, height_ratios=[0.3, 0.7]
+            2, 1, subplot_spec=main_gs[2, i], hspace=0.0, height_ratios=[0.3, 0.7]
         )
         ax_time_other = fig.add_subplot(sub_gs_other[0])
         ax_spec_other = fig.add_subplot(sub_gs_other[1])
         strike_axes.append((ax_time_other, ax_spec_other))
-
-    if nfft is None:
-        nfft = next_pow2(nperseg)
-
-    # Collect spectrogram axes for colorbar
-    spec_image = None
 
     # Plot whale sensors (top row)
     for i, sensor in enumerate(whale_sensors):
@@ -144,13 +187,7 @@ def plot_signal_templates(
         data = ds.data[0]
 
         if calibration_dir is not None:
-            match sensor["name"]:
-                case "3dvha":
-                    cal_file = Path(calibration_dir) / f"{sensor['name']}_cal.csv"
-                    data = readers.calibrate_3dvha(cal_file, data, fs)
-                case "vla1" | "vla2":
-                    cal_file = Path(calibration_dir) / f"{sensor['name']}_cal.toml"
-                    data = readers.calibrate_vla(cal_file, data, fs)
+            data = readers.calibrate(calibration_dir, data, fs, sensor["name"])
 
         ax_time, ax_spec = whale_axes[i]
         im = _plot_sensor_column(
@@ -171,6 +208,7 @@ def plot_signal_templates(
         )
         if spec_image is None:
             spec_image = im
+        add_panel_label(ax_spec, chr(98 + i))
 
     # Plot other sensors (bottom row) if provided
     if strike_sensors is not None:
@@ -222,6 +260,7 @@ def plot_signal_templates(
             )
             if spec_image is None:
                 spec_image = im
+            add_panel_label(ax_spec, chr(101 + i))
 
     # Add colorbar manually positioned on the right side
     if spec_image is not None:

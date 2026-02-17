@@ -76,6 +76,7 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
         logging.info("Creating signal template figure...")
         fig = plot_signal_templates(
             inventory_dir=config.signal_template.inventory_dir,
+            example_signal=config.signal_template.example_signal,
             whale_sensors=config.signal_template.whale_sensors,
             strike_sensors=config.signal_template.strike_sensors,
             col_titles=config.signal_template.col_titles,

@@ -7,7 +7,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredText
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class MapConfig(BaseModel):
@@ -26,6 +26,7 @@ class SignalTemplateConfig(BaseModel):
 
     inventory_dir: Path | None = None
     col_titles: list[str] = ["3DVHA", "VLA1", "VLA2"]
+    example_signal: dict[str, Any] | None = None
     whale_sensors: list[dict[str, Any]] | None = None
     strike_sensors: list[dict[str, Any]] | None = None
     filt_type: str | None = None
