@@ -64,20 +64,17 @@ def _add_bounding_box(
     ax.add_patch(box)
 
 
-def create_and_save_maps(
+def create_map_panels(
     bathy_data: Path,
     sensor_data: Path,
     turbine_data: Path,
     active_turbine_name: str,
     whale_bearings: Path,
-    output: Path,
-    dpi: int = 300,
-    show: bool = False,
-) -> None:
-    """Create and save a two-panel map figure from data files.
+) -> Figure:
+    """Create a two-panel map figure from data files.
 
     This is the top-level function that orchestrates data loading, processing,
-    figure creation, and saving.
+    and figure creation.
 
     Args:
         bathy_data: Path to bathymetry data file
@@ -85,25 +82,16 @@ def create_and_save_maps(
         turbine_data: Path to turbine locations CSV
         active_turbine_name: Name of the active turbine to highlight
         whale_bearings: Path to whale bearing data CSV
-        output: Output file path for the figure
-        dpi: Resolution in dots per inch
-        show: Whether to display the figure interactively
     """
-    # Load all data files
     (
         (bathy, lonvec, latvec),
         equip_locations,
         turbine_locations,
         whale_df,
     ) = _load_map_data(bathy_data, sensor_data, turbine_data, whale_bearings)
-
-    # Process data for plotting
     active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
     bearings, times = _process_whale_bearings(whale_df)
-
-    # Create figure
-    logging.info("Creating map figure.")
-    fig = create_maps(
+    return create_maps(
         bathy,
         lonvec,
         latvec,
@@ -115,9 +103,6 @@ def create_and_save_maps(
         bearings,
         times,
     )
-
-    # Save and optionally display
-    save_and_show_figure(fig, output, dpi, show)
 
 
 def _create_context_inset(ax, bbox_outer: list[list[float, float]]) -> None:
