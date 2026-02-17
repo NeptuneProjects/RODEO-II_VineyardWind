@@ -2,20 +2,13 @@ from collections.abc import Sequence
 from pathlib import Path
 import string
 
-import cmasher as cmr
 import cmocean as cmo
-import matplotlib
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
-import polars as pl
 import scipy.signal as signal
 from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.patches import Polygon
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-from mpl_toolkits.basemap import Basemap
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 from tritonoa.data.stream import DataStream
@@ -45,43 +38,6 @@ SAVEFIG_KWARGS = {
     "dpi": 300,
     "facecolor": "white",
 }
-
-
-def draw_polygon(
-    m: Basemap,
-    longitudes: list[float],
-    latitudes: list[float],
-    fill: bool = False,
-    alpha: float = 1.0,
-    edgecolor: str = "red",
-    linewidth: float = 1.0,
-    zorder: int = 10,
-):
-    x, y = m(longitudes, latitudes)
-    polygon = Polygon(
-        xy=list(zip(x, y)),
-        closed=True,
-        fill=fill,
-        alpha=alpha,
-        edgecolor=edgecolor,
-        linewidth=linewidth,
-        zorder=zorder,
-    )
-    return polygon
-
-
-def find_closest_contour_index(levels: NDArray[np.float64], value: float) -> int:
-    """
-    Find the index of the contour level that is closest to a given value.
-
-    Args
-    levels: The contour levels.
-    value: The value to find the closest contour level for.
-
-    Returns
-        The index of the closest contour level.
-    """
-    return np.argmin(np.abs(levels - value))
 
 
 def plot_corr(
