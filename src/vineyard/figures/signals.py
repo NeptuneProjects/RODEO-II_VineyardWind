@@ -196,7 +196,7 @@ def plot_signal_templates(
             times=times,
             data=data,
             fs=fs,
-            col_title=f"Fin whale call at {col_titles[i]}",
+            col_title=f"Fin whale vocalization at {col_titles[i]}",
             is_first_col=(i == 0),
             nperseg=nperseg,
             hop=hop,
