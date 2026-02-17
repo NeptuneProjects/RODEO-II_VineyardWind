@@ -802,8 +802,7 @@ def extract_whale_templates(config: WhaleTemplateConfig, inventory_path: Path) -
                     filt_type=config.filt_type,
                     filt_freq=config.filt_freq,
                 )
-
-                g = f.create_group(f"{sensor_name}_{call_type}")
+                g = f.create_group(f"{sensor_name}/{call_type}")
                 template.create_hdf5_dataset(g)
                 logging.info(
                     f"Saved template for whale {call_type} on {sensor_name} to {config.template_data}"
