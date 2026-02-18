@@ -49,6 +49,7 @@ def plot_whale_tracking(
     turbine_data: Path,
     active_turbine_name: str,
     whale_bearings: Path,
+    time_ranges: Sequence[tuple[np.datetime64, np.datetime64]],
 ) -> Figure:
     """Create a two-panel map figure from data files.
 
@@ -61,6 +62,10 @@ def plot_whale_tracking(
         turbine_data: Path to turbine locations CSV
         active_turbine_name: Name of the active turbine to highlight
         whale_bearings: Path to whale bearing data CSV
+        time_ranges: List of time ranges to highlight on the map [(start, end), ...]
+
+    Returns:
+        Matplotlib figure with the whale tracking maps and data plots
     """
     (
         (bathy, lonvec, latvec),
@@ -69,10 +74,10 @@ def plot_whale_tracking(
         whale_df,
     ) = _load_map_data(bathy_data, sensor_data, turbine_data, whale_bearings)
     active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
-    bearings, times = _process_whale_bearings(whale_df)
+    bearings, times, ranges = _process_whale_bearings(whale_df)
 
-    fig = plt.figure(figsize=(10, 5))
-    subfigs = fig.subfigures(nrows=1, ncols=2, wspace=-0.12, width_ratios=[0.4, 0.6])
+    fig = plt.figure(figsize=(11, 5.5))
+    subfigs = fig.subfigures(nrows=1, ncols=2, wspace=-0.18, width_ratios=[0.4, 0.6])
 
     create_map(
         bathy,
@@ -84,9 +89,10 @@ def plot_whale_tracking(
         bearings,
         times,
         subfigs[0],
+        ranges,
     )
 
-    plot_whale_data(whale_df, subfig=subfigs[1])
+    plot_whale_data(whale_df, time_ranges, subfig=subfigs[1])
     return fig
 
 
@@ -100,6 +106,7 @@ def create_map(
     bearings: Sequence[float],
     times: Sequence[np.datetime64],
     subfig: plt.Figure | None = None,
+    ranges: Sequence[float] | None = None,
 ) -> Figure:
     """Create a two-panel map figure showing regional context and detailed study area.
 
@@ -137,11 +144,15 @@ def create_map(
         shallowest_contour_depth=-1.0,
         levelsf=np.arange(-2500, 100, 50),
         levelsc=np.arange(-2500, 40, 100),
-        show_legend=False,
+        show_legend=True,
+        legend_loc="inside",
+        bearing_arc_range=(140, 220),
+        arc_range_km=[np.min(ranges), np.median(ranges)],
+        arc_colors=["tab:blue", "tab:red"],
     )
 
     # Plot bearing lines with color mapping
-    colors = plt.cm.RdPu(np.linspace(0.25, 1, len(bearings)))
+    colors = plt.cm.RdPu(np.linspace(0.1, 1, len(bearings)))
     _plot_bearing_lines(ax, m, equip_locations, bearings, colors)
 
     # Add New England context inset
@@ -183,7 +194,9 @@ def _plot_bearing_lines(
         )
 
 
-def _process_whale_bearings(whale_df: DataFrame) -> tuple[np.ndarray, np.ndarray]:
+def _process_whale_bearings(
+    whale_df: DataFrame,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Process whale bearings by correcting ambiguities and filtering.
 
     Returns:
@@ -199,7 +212,7 @@ def _process_whale_bearings(whale_df: DataFrame) -> tuple[np.ndarray, np.ndarray
     # Concatenate, filter, and sort
     corr_whale_df = (
         pl.concat([unamb_bearings, amb_bearings])
-        .filter(pl.col("vla1_brg") < 175, pl.col("vla1_brg") > 155)
+        .filter(pl.col("vla1_brg") < 205, pl.col("vla1_brg") > 155)
         .sort("timestamp")
     )
 
@@ -208,17 +221,24 @@ def _process_whale_bearings(whale_df: DataFrame) -> tuple[np.ndarray, np.ndarray
         [np.datetime64(i, "us").astype("int64") for i in corr_whale_df["timestamp"]]
     )
 
-    return bearings, times
+    ranges = (
+        whale_df["whale_range_km"].filter(whale_df["whale_range_km"] < 500).to_numpy()
+    )
+    return bearings, times, ranges
 
 
-def plot_whale_data(df: pl.DataFrame, subfig: plt.Figure | None = None) -> Figure:
+def plot_whale_data(
+    df: pl.DataFrame,
+    time_ranges: Sequence[tuple[np.datetime64, np.datetime64]],
+    subfig: plt.Figure | None = None,
+) -> Figure:
     locator = mdates.AutoDateLocator()
     formatter = mdates.ConciseDateFormatter(locator, offset_formats=["%Y-%b-%d"] * 6)
 
     host = subfig if subfig is not None else plt.figure(figsize=(10, 6))
     fig = subfig.figure if subfig is not None else host
 
-    gs = host.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.3)
+    gs = host.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.25)
     gs_upper = gs[0].subgridspec(3, 1, hspace=0.05)
     axes = [host.add_subplot(gs_upper[i]) for i in range(3)]
     ax4 = host.add_subplot(gs[1])
@@ -234,6 +254,17 @@ def plot_whale_data(df: pl.DataFrame, subfig: plt.Figure | None = None) -> Figur
         s=10,
         zorder=10,
     )
+    [
+        ax.axvspan(
+            start,
+            end,
+            facecolor="gray",
+            edgecolor="none",
+            alpha=0.3,
+            zorder=5,
+        )
+        for start, end in time_ranges
+    ]
     ax.set_ylim(160, 200)
     ax.grid()
     ax.tick_params(labelbottom=False)
@@ -248,6 +279,17 @@ def plot_whale_data(df: pl.DataFrame, subfig: plt.Figure | None = None) -> Figur
         s=10,
         zorder=10,
     )
+    [
+        ax.axvspan(
+            start,
+            end,
+            facecolor="gray",
+            edgecolor="none",
+            alpha=0.3,
+            zorder=5,
+        )
+        for start, end in time_ranges
+    ]
     add_panel_label(ax, "c")
 
     ax.grid()
@@ -262,7 +304,18 @@ def plot_whale_data(df: pl.DataFrame, subfig: plt.Figure | None = None) -> Figur
         s=10,
         zorder=10,
     )
-    ax.set_ylim(0, 1000)
+    [
+        ax.axvspan(
+            start,
+            end,
+            facecolor="gray",
+            edgecolor="none",
+            alpha=0.3,
+            zorder=5,
+        )
+        for start, end in time_ranges
+    ]
+    ax.set_ylim(0, 200)
     ax.grid()
     ax.set_xlabel("Time (UTC)")
     ax.set_ylabel("Max. range (km)")
@@ -278,7 +331,7 @@ def plot_whale_data(df: pl.DataFrame, subfig: plt.Figure | None = None) -> Figur
 
 def _plot_range_est_distribution(df: pl.DataFrame, ax: Axes) -> Axes:
     """Plot distribution of whale range estimates."""
-    data = df["whale_range_km"].filter(df["whale_range_km"] < 500).to_numpy()
+    data = df["whale_range_km"].filter(df["whale_range_km"] < 200).to_numpy()
     ax.hist(
         data,
         bins=50,

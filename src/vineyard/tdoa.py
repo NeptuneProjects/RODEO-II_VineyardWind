@@ -587,9 +587,12 @@ def localize(config: LocalizationConfig) -> None:
         config.whale_call_data, config.distance_lut, config.reference_site
     )
     df = localize_tdoa_data(df, config.sensor_data)
+    df.write_csv(config.localization_file.with_name("tdoa_localization_raw.csv"))
     df = correct_ambiguous_bearings(
         df, config.ambiguity_lower_bound, config.ambiguity_upper_bound
     )
+    # Remove outliers < 162 > 210 degrees for vla1_brg
+    df = df.filter((pl.col("vla1_brg") >= 162) & (pl.col("vla1_brg") <= 210))
     df = compute_angular_velocity(
         df,
         config.dwdt_threshold,

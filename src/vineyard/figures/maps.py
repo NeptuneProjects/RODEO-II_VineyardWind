@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 from polars import DataFrame
 
 import vineyard.readers as readers
-from vineyard.figures.common import add_panel_label, save_and_show_figure
+from vineyard.figures.common import add_panel_label
 
 # Bounding box constants for map figures
 BBOX_INSET = [[-70.65, -70.249], [40.9, 41.201]]
@@ -62,47 +62,6 @@ def _add_bounding_box(
         facecolor="none",
     )
     ax.add_patch(box)
-
-
-def create_map_panels(
-    bathy_data: Path,
-    sensor_data: Path,
-    turbine_data: Path,
-    active_turbine_name: str,
-    whale_bearings: Path,
-) -> Figure:
-    """Create a two-panel map figure from data files.
-
-    This is the top-level function that orchestrates data loading, processing,
-    and figure creation.
-
-    Args:
-        bathy_data: Path to bathymetry data file
-        sensor_data: Path to sensor locations CSV
-        turbine_data: Path to turbine locations CSV
-        active_turbine_name: Name of the active turbine to highlight
-        whale_bearings: Path to whale bearing data CSV
-    """
-    (
-        (bathy, lonvec, latvec),
-        equip_locations,
-        turbine_locations,
-        whale_df,
-    ) = _load_map_data(bathy_data, sensor_data, turbine_data, whale_bearings)
-    active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
-    bearings, times = _process_whale_bearings(whale_df)
-    return create_maps(
-        bathy,
-        lonvec,
-        latvec,
-        equip_locations,
-        turbine_locations,
-        active_turbine,
-        BBOX_INSET,
-        BBOX_OUTER,
-        bearings,
-        times,
-    )
 
 
 def _create_context_inset(
@@ -434,6 +393,10 @@ def _plot_study_area(
     parallel_labels: list[int] = [1, 0, 0, 0],
     marker_size: int = 50,
     show_legend: bool = True,
+    legend_loc: str | None = None,
+    bearing_arc_range: tuple[float, float] | None = None,
+    arc_range_km: Sequence[float] | None = None,
+    arc_colors: Sequence[str] | None = None,
 ) -> tuple[Axes, Basemap]:
     if bounds is None:
         llcrnrlat = np.min(latvec)
@@ -516,17 +479,49 @@ def _plot_study_area(
             label="Hydrophone Array",
         )
 
+    if bearing_arc_range is not None and equipment_df is not None:
+        x_vla1, y_vla1 = m(
+            equipment_df.filter(pl.col("mooring_name") == "VLA1")["longitude"].item(0),
+            equipment_df.filter(pl.col("mooring_name") == "VLA1")["latitude"].item(0),
+        )
+        brg_min, brg_max = bearing_arc_range
+        # Convert bearing (CW from N) to math angle (CCW from E)
+        angle_start = 90.0 - brg_max
+        angle_end = 90.0 - brg_min
+        angles = np.linspace(angle_start, angle_end, 200)
+        for arc_range, color in zip(arc_range_km, arc_colors):
+            radius = arc_range * 1e3
+            x_arc = x_vla1 + radius * np.cos(np.deg2rad(angles))
+            y_arc = y_vla1 + radius * np.sin(np.deg2rad(angles))
+            ax.plot(
+                x_arc,
+                y_arc,
+                color=color,
+                linewidth=3,
+                zorder=50,
+                label=f"{arc_range:.1f} km",
+            )
+
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
     if show_legend:
-        leg = ax.legend(
-            facecolor="white",
-            edgecolor="black",
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.05),
-            ncol=3,
-        )
+        if legend_loc == "inside":
+            leg = ax.legend(
+                facecolor="white",
+                edgecolor="black",
+                bbox_to_anchor=(0.8, 0.65),
+                loc="center",
+                ncol=1,
+            )
+        else:
+            leg = ax.legend(
+                facecolor="white",
+                edgecolor="black",
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.05),
+                ncol=3,
+            )
         leg.get_frame().set_alpha(None)
 
     scalebar = AnchoredSizeBar(
@@ -543,31 +538,3 @@ def _plot_study_area(
     ax.add_artist(scalebar)
 
     return ax, m
-
-
-def _process_whale_bearings(whale_df: DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    """Process whale bearings by correcting ambiguities and filtering.
-
-    Returns:
-        Tuple of (bearings, times) as numpy arrays
-    """
-    # Correct bearing ambiguities
-    unamb_bearings = whale_df.filter(pl.col("vla1_brg") > 90)
-    amb_bearings = whale_df.filter(pl.col("vla1_brg") < 90)
-    amb_bearings = amb_bearings.with_columns(
-        pl.col("vla1_brg").add(2 * (90 - pl.col("vla1_brg")))
-    )
-
-    # Concatenate, filter, and sort
-    corr_whale_df = (
-        pl.concat([unamb_bearings, amb_bearings])
-        .filter(pl.col("vla1_brg") < 175, pl.col("vla1_brg") > 155)
-        .sort("timestamp")
-    )
-
-    bearings = corr_whale_df["vla1_brg"].to_numpy()
-    times = np.array(
-        [np.datetime64(i, "us").astype("int64") for i in corr_whale_df["timestamp"]]
-    )
-
-    return bearings, times
