@@ -832,18 +832,18 @@ def process_data(config: ProcessConfig) -> None:
         config: ProcessConfig instance containing the configuration for
             data processing.
     """
-    # build_strikes_df(
-    #     config.strike_config,
-    #     config.start_time,
-    #     config.time_ranges,
-    #     config.inventory_path,
-    # )
-    # save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
-    # xcorr_strike_pairs(
-    #     config.strike_config.strike_corr_config,
-    #     config.strike_config.strike_data,
-    #     config.strike_config.strike_corr,
-    # )
+    build_strikes_df(
+        config.strike_config,
+        config.start_time,
+        config.time_ranges,
+        config.inventory_path,
+    )
+    save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
+    xcorr_strike_pairs(
+        config.strike_config.strike_corr_config,
+        config.strike_config.strike_data,
+        config.strike_config.strike_corr,
+    )
     build_templates(
         config.template_config,
         config.start_time,
@@ -862,9 +862,9 @@ def process_data(config: ProcessConfig) -> None:
         config.strike_config.strike_index,
         config.template_config.template_data,
     )
-    # extract_whale_templates(
-    #     config.whale_template_config, config.inventory_path, config.calibration_dir
-    # )
+    extract_whale_templates(
+        config.whale_template_config, config.inventory_path, config.calibration_dir
+    )
     pulse_compress(config.denoise_config, config.whale_template_config)
     detect_whale_calls(
         config.whale_detection_config, config.denoise_config.denoised_data
