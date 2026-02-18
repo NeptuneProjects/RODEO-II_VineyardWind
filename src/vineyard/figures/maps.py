@@ -105,18 +105,21 @@ def create_map_panels(
     )
 
 
-def _create_context_inset(ax, bbox_outer: list[list[float, float]]) -> None:
+def _create_context_inset(
+    ax,
+    bbox_outer: list[list[float, float]],
+    bounds: list[list[float, float]] = [[-77.5, -62.5], [32.5, 47.5]],
+) -> None:
     """Create a New England context inset map showing the study area location."""
     ax_inset = inset_axes(
         ax, width="25%", height="25%", loc="upper right", borderpad=0.5
     )
-    ne_bounds = [[-77.5, -62.5], [32.5, 47.5]]
     m_inset = Basemap(
         projection="merc",
-        llcrnrlon=ne_bounds[0][0],
-        llcrnrlat=ne_bounds[1][0],
-        urcrnrlon=ne_bounds[0][1],
-        urcrnrlat=ne_bounds[1][1],
+        llcrnrlon=bounds[0][0],
+        llcrnrlat=bounds[1][0],
+        urcrnrlon=bounds[0][1],
+        urcrnrlat=bounds[1][1],
         resolution="i",
         ax=ax_inset,
     )
@@ -285,9 +288,12 @@ def _load_map_data(
     bathy_data: Path,
     sensor_data: Path,
     turbine_data: Path,
-    whale_bearings: Path,
+    whale_bearings: Path | None = None,
 ) -> tuple[
-    tuple[dict, Sequence[float], Sequence[float]], DataFrame, DataFrame, DataFrame
+    tuple[dict, Sequence[float], Sequence[float]],
+    DataFrame,
+    DataFrame,
+    DataFrame | None,
 ]:
     """Load all data files needed for map creation.
 
@@ -299,7 +305,11 @@ def _load_map_data(
     bathy, lonvec, latvec = readers.read_bathymetry(bathy_data)
     equip_locations = pl.read_csv(sensor_data)
     turbine_locations = pl.read_csv(turbine_data)
-    whale_df = pl.read_csv(whale_bearings).cast({"timestamp": pl.Datetime})
+    whale_df = (
+        pl.read_csv(whale_bearings).cast({"timestamp": pl.Datetime})
+        if whale_bearings
+        else None
+    )
 
     return (bathy, lonvec, latvec), equip_locations, turbine_locations, whale_df
 
@@ -422,6 +432,7 @@ def _plot_study_area(
     parallels: float = 0.2,
     meridian_labels: list[int] = [0, 0, 1, 0],
     parallel_labels: list[int] = [1, 0, 0, 0],
+    marker_size: int = 50,
     show_legend: bool = True,
 ) -> tuple[Axes, Basemap]:
     if bounds is None:
@@ -476,7 +487,7 @@ def _plot_study_area(
             c="none",
             edgecolors="k",
             linewidth=0.5,
-            # s=150,
+            # s=marker_size,
             zorder=20,
             label="Turbines",
         )
@@ -488,7 +499,7 @@ def _plot_study_area(
             c="tab:orange",
             edgecolors="k",
             # linewidth=1,
-            # s=150,
+            s=marker_size,
             zorder=30,
             label=active_turbine["label"],
         )
@@ -500,6 +511,7 @@ def _plot_study_area(
             c="tab:green",
             edgecolors="k",
             # linewidth=1,
+            s=marker_size,
             zorder=20,
             label="Hydrophone Array",
         )

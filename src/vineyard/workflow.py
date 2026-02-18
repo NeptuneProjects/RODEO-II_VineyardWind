@@ -52,23 +52,43 @@ class Config(BaseModel):
         if self.plotting_config.calibration_dir is None:
             self.plotting_config.calibration_dir = self.metadata_config.calibration_dir
 
-        if self.plotting_config.map is not None:
-            if self.plotting_config.map.bathy_data is None:
-                self.plotting_config.map.bathy_data = (
+        if self.plotting_config.experiment is not None:
+            if self.plotting_config.experiment.bathy_data is None:
+                self.plotting_config.experiment.bathy_data = (
                     self.etl_config.bathymetry.output_path
                 )
-            if self.plotting_config.map.sensor_data is None:
-                self.plotting_config.map.sensor_data = self.metadata_config.sensor_data
-            if self.plotting_config.map.turbine_data is None:
-                self.plotting_config.map.turbine_data = (
+            if self.plotting_config.experiment.sensor_data is None:
+                self.plotting_config.experiment.sensor_data = (
+                    self.metadata_config.sensor_data
+                )
+            if self.plotting_config.experiment.turbine_data is None:
+                self.plotting_config.experiment.turbine_data = (
                     self.metadata_config.turbine_data
                 )
-            if self.plotting_config.map.active_turbine_name is None:
-                self.plotting_config.map.active_turbine_name = (
+            if self.plotting_config.experiment.active_turbine_name is None:
+                self.plotting_config.experiment.active_turbine_name = (
                     self.metadata_config.source_pile
                 )
-            if self.plotting_config.map.whale_bearings is None:
-                self.plotting_config.map.whale_bearings = (
+
+        if self.plotting_config.whale_tracking is not None:
+            if self.plotting_config.whale_tracking.bathy_data is None:
+                self.plotting_config.whale_tracking.bathy_data = (
+                    self.etl_config.bathymetry.output_path
+                )
+            if self.plotting_config.whale_tracking.sensor_data is None:
+                self.plotting_config.whale_tracking.sensor_data = (
+                    self.metadata_config.sensor_data
+                )
+            if self.plotting_config.whale_tracking.turbine_data is None:
+                self.plotting_config.whale_tracking.turbine_data = (
+                    self.metadata_config.turbine_data
+                )
+            if self.plotting_config.whale_tracking.active_turbine_name is None:
+                self.plotting_config.whale_tracking.active_turbine_name = (
+                    self.metadata_config.source_pile
+                )
+            if self.plotting_config.whale_tracking.whale_bearings is None:
+                self.plotting_config.whale_tracking.whale_bearings = (
                     self.tdoa_config.localization_file
                 )
 

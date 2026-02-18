@@ -23,20 +23,21 @@ import logging
 import matplotlib.pyplot as plt
 
 from vineyard.figures.common import (
-    MapConfig,
+    WhaleTrackingConfig,
     PlottingConfig,
     add_panel_label,
     save_and_show_figure,
 )
 from vineyard.figures.denoise import plot_denoising
-from vineyard.figures.maps import create_map_panels
+from vineyard.figures.experiment import plot_experiment_setup
+from vineyard.figures.whale import plot_whale_tracking
 from vineyard.figures.signals import plot_signals
 from vineyard.figures.templates import plot_strike_template
 
 __all__ = [
     # Common utilities
     "PlottingConfig",
-    "MapConfig",
+    "WhaleTrackingConfig",
     "add_panel_label",
     "save_and_show_figure",
     # Map figures
@@ -63,19 +64,39 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
     if config.mpl_style is not None:
         plt.style.use(config.mpl_style)
 
-    if config.map is not None:
-        logging.info("Creating map figure...")
-        fig = create_map_panels(
-            bathy_data=config.map.bathy_data,
-            sensor_data=config.map.sensor_data,
-            turbine_data=config.map.turbine_data,
-            active_turbine_name=config.map.active_turbine_name,
-            whale_bearings=config.map.whale_bearings,
+    if config.experiment is not None:
+        logging.info("Creating experiment setup figure...")
+        fig = plot_experiment_setup(
+            bathy_data=config.experiment.bathy_data,
+            sensor_data=config.experiment.sensor_data,
+            turbine_data=config.experiment.turbine_data,
+            active_turbine_name=config.experiment.active_turbine_name,
+            image_file=config.experiment.image_file,
         )
         save_and_show_figure(
-            fig, config.map.output, show=show, savefig_kwargs=config.savefig_kwargs
+            fig,
+            config.experiment.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
         )
-        logging.info(f"Map figure saved to {config.map.output}")
+        logging.info(f"Experiment setup figure saved to {config.experiment.output}")
+
+    if config.whale_tracking is not None:
+        logging.info("Creating whale tracking figure...")
+        fig = plot_whale_tracking(
+            bathy_data=config.whale_tracking.bathy_data,
+            sensor_data=config.whale_tracking.sensor_data,
+            turbine_data=config.whale_tracking.turbine_data,
+            active_turbine_name=config.whale_tracking.active_turbine_name,
+            whale_bearings=config.whale_tracking.whale_bearings,
+        )
+        save_and_show_figure(
+            fig,
+            config.whale_tracking.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"Whale tracking figure saved to {config.whale_tracking.output}")
 
     if config.signal_template is not None:
         logging.info("Creating signal template figure...")

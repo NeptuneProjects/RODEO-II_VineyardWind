@@ -44,15 +44,26 @@ class DenoiseConfig(BaseModel):
         return self
 
 
-class MapConfig(BaseModel):
-    """Configuration for map figure creation."""
+class ExperimentConfig(BaseModel):
+    """Configuration for experiment figure creation."""
+
+    bathy_data: Path | None = None
+    sensor_data: Path | None = None
+    turbine_data: Path | None = None
+    active_turbine_name: str | None = None
+    image_file: Path | None = None
+    output: Path = "reports/figures/experiment_setup.png"
+
+
+class WhaleTrackingConfig(BaseModel):
+    """Configuration for whale tracking figure creation."""
 
     bathy_data: Path | None = None
     sensor_data: Path | None = None
     turbine_data: Path | None = None
     active_turbine_name: str | None = None
     whale_bearings: Path | None = None
-    output: Path = "reports/figures/map.png"
+    output: Path = "reports/figures/whale_tracking.png"
 
 
 class SignalsConfig(BaseModel):
@@ -131,7 +142,8 @@ class PlottingConfig(BaseModel):
     """
 
     mpl_style: Path | None = None
-    map: MapConfig | None = None
+    experiment: ExperimentConfig | None = None
+    whale_tracking: WhaleTrackingConfig | None = None
     signal_template: SignalsConfig | None = None
     template_construction: TemplateConstructionConfig | None = None
     denoising: DenoiseConfig | None = None
