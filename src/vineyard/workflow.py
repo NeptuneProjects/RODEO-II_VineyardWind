@@ -87,7 +87,8 @@ class Config(BaseModel):
                 tc.strike_corr_path = self.process_config.strike_config.strike_corr
             if tc.inventory_path is None:
                 tc.inventory_path = (
-                    self.process_config.inventory_path / f"inventory_{tc.sensor_name}.csv"
+                    self.process_config.inventory_path
+                    / f"inventory_{tc.sensor_name}.csv"
                 )
             # Sync timing parameters
             if tc.start_time is None:
@@ -117,6 +118,15 @@ class Config(BaseModel):
                     if tc.ylim is None:
                         tc.ylim = sensor.get("ylim")
                     break
+
+        if self.plotting_config.denoising is not None:
+            dn = self.plotting_config.denoising
+            if dn.data_dir is None:
+                dn.data_dir = self.process_config.denoise_config.denoised_data
+            if dn.template_data is None:
+                dn.template_data = (
+                    self.process_config.whale_template_config.template_data
+                )
 
         return self
 

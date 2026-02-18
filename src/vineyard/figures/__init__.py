@@ -28,6 +28,7 @@ from vineyard.figures.common import (
     add_panel_label,
     save_and_show_figure,
 )
+from vineyard.figures.denoise import plot_denoising
 from vineyard.figures.maps import create_map_panels
 from vineyard.figures.signals import plot_signals
 from vineyard.figures.templates import plot_strike_template
@@ -133,3 +134,29 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             savefig_kwargs=config.savefig_kwargs,
         )
         logging.info(f"Template construction figure saved to {outfile}")
+
+    if config.denoising is not None:
+        logging.info("Creating denoising figure...")
+        dn = config.denoising
+        fig = plot_denoising(
+            data_dir=dn.data_dir,
+            sensor=dn.sensor,
+            template_data=dn.template_data,
+            time_start=dn.time_start,
+            time_end=dn.time_end,
+            freq_time_start=dn.freq_time_start,
+            freq_time_end=dn.freq_time_end,
+            filt_type=dn.filt_type,
+            filt_freq=dn.filt_freq,
+            window=dn.window,
+            nperseg=dn.nperseg,
+            hop=dn.hop,
+            flim=dn.flim,
+        )
+        save_and_show_figure(
+            fig,
+            dn.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"Denoising figure saved to {dn.output}")

@@ -8,7 +8,40 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredText
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+from tritonoa.data.time import TIME_PRECISION
+
+
+class DenoiseConfig(BaseModel):
+    """Configuration for denoising figure creation."""
+
+    data_dir: Path | None = None
+    sensor: str = "vla1"
+    template_data: Path | None = None
+    time_start: str | None = None
+    time_end: str | None = None
+    freq_time_start: str | None = None
+    freq_time_end: str | None = None
+    filt_type: str | None = None
+    filt_freq: list[float] | float | None = None
+    window: str = "hann"
+    nperseg: int = 16384
+    hop: int = 8192
+    flim: list[float] | None = None
+    output: Path = "reports/figures/denoising.png"
+
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "DenoiseConfig":
+        """Convert time_ranges from lists of strings to lists of numpy datetime64 tuples."""
+        if self.time_start is not None:
+            self.time_start = np.datetime64(self.time_start, TIME_PRECISION)
+        if self.time_end is not None:
+            self.time_end = np.datetime64(self.time_end, TIME_PRECISION)
+        if self.freq_time_start is not None:
+            self.freq_time_start = np.datetime64(self.freq_time_start, TIME_PRECISION)
+        if self.freq_time_end is not None:
+            self.freq_time_end = np.datetime64(self.freq_time_end, TIME_PRECISION)
+        return self
 
 
 class MapConfig(BaseModel):
@@ -101,6 +134,7 @@ class PlottingConfig(BaseModel):
     map: MapConfig | None = None
     signal_template: SignalsConfig | None = None
     template_construction: TemplateConstructionConfig | None = None
+    denoising: DenoiseConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 

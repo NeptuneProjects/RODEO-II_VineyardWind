@@ -214,9 +214,21 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 # datadir = "data/acoustic/denoised"
 # ylim = [-7e7, 7e7]
 
-[plotting.template_construction]
-sensor_name = "vla1"
-strike_indices = [30, 1900, 2908]
-output_dir = "reports/figures/strike_templates/"
+# [plotting.template_construction]
+# sensor_name = "vla1"
+# strike_indices = [30, 1900, 2908]
+# output_dir = "reports/figures/strike_templates/"
 
 [plotting.denoising]
+sensor = "vla1"
+time_start = "2023-12-01T22:11:00.00"
+time_end = "2023-12-01T22:26:00.00"
+freq_time_start = "2023-12-01T22:24:00"
+freq_time_end = "2023-12-01T22:25:59"
+filt_type = "bandpass"
+filt_freq = [15.0, 50.0]
+window = "hann"
+nperseg = 32768
+hop = 256
+flim = [15.0, 50.0]
+output = "reports/figures/denoised.png"
