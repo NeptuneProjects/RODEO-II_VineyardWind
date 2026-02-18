@@ -21,7 +21,6 @@ Public API:
 import logging
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from vineyard.figures.common import (
     MapConfig,
@@ -29,7 +28,7 @@ from vineyard.figures.common import (
     add_panel_label,
     save_and_show_figure,
 )
-from vineyard.figures.maps import create_map_panels, create_maps
+from vineyard.figures.maps import create_map_panels
 from vineyard.figures.signals import plot_signals
 from vineyard.figures.templates import plot_strike_template
 
@@ -41,7 +40,6 @@ __all__ = [
     "save_and_show_figure",
     # Map figures
     "create_map_panels",
-    "create_maps",
     # Signal figures
     "plot_signals",
     # Template construction figures
