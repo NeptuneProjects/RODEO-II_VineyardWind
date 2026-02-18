@@ -12,16 +12,21 @@ import polars as pl
 from numpy.typing import ArrayLike, NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
-from scipy.signal import correlate, correlation_lags, find_peaks, hilbert
+from scipy.signal import find_peaks, hilbert
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5
-from tritonoa.data.stream import DataStream
 from tritonoa.data.signal import taper
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+from vineyard.process_utils import (
+    enforce_same_size,
+    extract_trace,
+    get_anchor_trace,
+    sample_delay,
+)
 import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
-from vineyard.plotting import plot_template
+from vineyard.figures.templates import plot_template
 
 
 class DenoiseConfig(BaseModel):
@@ -302,8 +307,8 @@ def _build_sensor_templates_rolling(
             corr_matrix_window = corr_matrix[
                 window_start:window_end, window_start:window_end
             ]
-            anchor_index = _get_anchor_trace(corr_matrix_window)
-            anchor_trace = _extract_trace(
+            anchor_index = get_anchor_trace(corr_matrix_window)
+            anchor_trace = extract_trace(
                 ds,
                 np.datetime64(
                     strike_index.item(template_inds[anchor_index], "start_time")
@@ -321,11 +326,11 @@ def _build_sensor_templates_rolling(
                 if idx == anchor_index:
                     aligned_tr = anchor_trace
                 else:
-                    tr = _extract_trace(ds, tr_start, tr_end)
+                    tr = extract_trace(ds, tr_start, tr_end)
                     shift_samples = sample_delay(anchor_trace, tr)
                     shift_seconds = shift_samples / fs
 
-                    aligned_tr = _extract_trace(
+                    aligned_tr = extract_trace(
                         ds,
                         tr_start
                         - np.timedelta64(
@@ -343,7 +348,7 @@ def _build_sensor_templates_rolling(
                 traces.append(aligned_tr)
 
             # STEP 4: Compute final template from template-aligned traces
-            traces = np.array(_enforce_same_size(traces))
+            traces = np.array(enforce_same_size(traces))
             template = np.median(traces, axis=0)
 
             # Get window indices for this strike
@@ -762,39 +767,6 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
     df.write_csv(config.output_file)
 
 
-def _enforce_same_size(arrays: list[np.ndarray]) -> list[np.ndarray]:
-    """Ensure all arrays in the list have the same size by padding with zeros."""
-    max_length = max(arr.shape[0] for arr in arrays)
-    return [
-        np.pad(arr, (0, max_length - arr.shape[0]), constant_values=0.0)
-        for arr in arrays
-    ]
-
-
-def _extract_trace(
-    ds: DataStream, start_time: np.datetime64, end_time: np.datetime64
-) -> np.ndarray:
-    """Extract trace from datastream using direct array indexing.
-
-    Args:
-        ds: DataStream containing the acoustic data.
-        start_time: Start time of the trace to extract.
-        end_time: End time of the trace to extract.
-    Returns:
-        Extracted trace data.
-    """
-    # Convert times to sample indices
-    fs = ds.stats.sampling_rate
-    start_sample = int((start_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
-    end_sample = int((end_time - ds.stats.time_init) / np.timedelta64(1, "s") * fs)
-
-    # Clip to valid range
-    start_sample = max(0, start_sample)
-    end_sample = min(ds.num_samples, end_sample)
-
-    return ds.data[0, start_sample:end_sample]
-
-
 def extract_whale_templates(
     config: WhaleTemplateConfig, inventory_path: Path, calibration_dir: Path
 ) -> None:
@@ -842,22 +814,6 @@ def _find_strikes(
         cf, height=threshold, distance=int(distance_sec * sampling_rate)
     )[0]
     return peaks
-
-
-def _get_anchor_trace(corr_matrix_window: np.ndarray) -> int:
-    """Get the "anchor trace" for a window of strikes, defined as the
-    trace with the highest median correlation to all others.
-
-    Args:
-        corr_matrix_window (np.ndarray): Correlation matrix for the strikes
-            in the current window.
-    Returns:
-        int: Index of the anchor trace within the window.
-    """
-    corr_matrix_masked = np.where(corr_matrix_window < 1.0, corr_matrix_window, np.nan)
-    median_corrs = np.nanmedian(corr_matrix_masked, axis=0)
-    anchor_index = np.nanargmax(median_corrs)
-    return anchor_index
 
 
 def _get_window_inds(
@@ -968,22 +924,6 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
             f"Pulse compression completed for sensor: {sensor_name}. "
             f"Saved to {denoise_config.denoised_data / f'{sensor_name}_pc.h5'}"
         )
-
-
-def sample_delay(sig1: NDArray, sig2: NDArray) -> int:
-    """Calculate the sample delay between two signals using cross-correlation.
-
-    Args:
-        sig1: First signal.
-        sig2: Second signal.
-
-    Returns:
-        Time delay in seconds between the two signals.
-    """
-    xcorr = correlate(sig1, sig2, mode="same")
-    lags = correlation_lags(len(sig1), len(sig2), mode="same")
-    peak_lag = lags[np.argmax(xcorr)]
-    return peak_lag
 
 
 def save_strikes(

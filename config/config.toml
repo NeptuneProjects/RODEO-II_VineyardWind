@@ -97,16 +97,16 @@ filt_freq = [15.0, 300.0]
 [process.template]
 sensors = [
     { name = "3dvha", channel = 7, ylim = [
-        -0.05,
-        0.05,
+        -1.5e7,
+        1.5e7,
     ] },
     { name = "vla1", channel = 3, ylim = [
-        -2.5e-7,
-        2.5e-7,
+        -1.0e8,
+        1.0e8,
     ] },
     { name = "vla2", channel = 0, ylim = [
-        -1.5e-7,
-        1.5e-7,
+        -1.5e7,
+        1.5e7,
     ] },
 ]
 buffer_start = 0.8
@@ -180,36 +180,43 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 # [plotting.map]
 # output = "reports/figures/maps/map.png"
 
-[plotting.signal_template]
-col_titles = ["3DVHA", "VLA1", "VLA2"]
+# [plotting.signal_template]
+# col_titles = ["3DVHA", "VLA1", "VLA2"]
 
-whale_sensors = [
-    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-]
-strike_sensors = [
-    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-]
-filt_type = "bandpass"
-filt_freq = [9.0, 110.0]
-nperseg = 16384
-hop = 32
-flim = [10.0, 90.0]
-whale_ylim = [-3e7, 3e7]
-strike_ylim = [-3e8, 3e8]
-figsize = [9, 9]
+# whale_sensors = [
+#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+# ]
+# strike_sensors = [
+#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+# ]
+# filt_type = "bandpass"
+# filt_freq = [9.0, 110.0]
+# nperseg = 16384
+# hop = 32
+# flim = [10.0, 90.0]
+# whale_ylim = [-3e7, 3e7]
+# strike_ylim = [-3e8, 3e8]
+# figsize = [9, 9]
 
-output = "reports/figures/signal_templates.png"
+# output = "reports/figures/signal_templates.png"
 
-[plotting.signal_template.example_signal]
-name = "vla1"
-channel = 0
-time_start = "2023-12-01T21:06:15.00"
-time_end = "2023-12-01T21:08:15"
-start_buffer = 60.0
-end_buffer = 60.0
-datadir = "data/acoustic/denoised"
-ylim = [-7e7, 7e7]
+# [plotting.signal_template.example_signal]
+# name = "vla1"
+# channel = 0
+# time_start = "2023-12-01T21:06:15.00"
+# time_end = "2023-12-01T21:08:15"
+# start_buffer = 60.0
+# end_buffer = 60.0
+# datadir = "data/acoustic/denoised"
+# ylim = [-7e7, 7e7]
+
+[plotting.template_construction]
+sensor_name = "vla1"
+strike_indices = [30, 1900, 2908]
+output_dir = "reports/figures/template_construction/"
+
+[plotting.denoising]

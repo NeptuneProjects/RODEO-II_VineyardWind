@@ -21,6 +21,7 @@ Public API:
 import logging
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from vineyard.figures.common import (
     MapConfig,
@@ -29,7 +30,8 @@ from vineyard.figures.common import (
     save_and_show_figure,
 )
 from vineyard.figures.maps import create_map_panels, create_maps
-from vineyard.figures.signals import plot_signal_templates
+from vineyard.figures.signals import plot_signals
+from vineyard.figures.templates import plot_strike_template
 
 __all__ = [
     # Common utilities
@@ -40,6 +42,10 @@ __all__ = [
     # Map figures
     "create_map_panels",
     "create_maps",
+    # Signal figures
+    "plot_signals",
+    # Template construction figures
+    "plot_strike_template",
     # Orchestration
     "make_figures",
 ]
@@ -74,7 +80,7 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
 
     if config.signal_template is not None:
         logging.info("Creating signal template figure...")
-        fig = plot_signal_templates(
+        fig = plot_signals(
             inventory_dir=config.signal_template.inventory_dir,
             example_signal=config.signal_template.example_signal,
             whale_sensors=config.signal_template.whale_sensors,
@@ -98,3 +104,35 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             savefig_kwargs=config.savefig_kwargs,
         )
         logging.info(f"Signal template figure saved to {config.signal_template.output}")
+
+    if config.template_construction is not None:
+        logging.info("Creating template construction figures...")
+        tc = config.template_construction
+        fig = plot_strike_template(
+            strike_index_path=tc.strike_index_path,
+            strike_corr_path=tc.strike_corr_path,
+            inventory_path=tc.inventory_path,
+            calibration_dir=config.calibration_dir,
+            sensor_name=tc.sensor_name,
+            channel=tc.channel,
+            strike_indices=tc.strike_indices,
+            start_time=tc.start_time,
+            end_time=tc.end_time,
+            buffer_start=tc.buffer_start,
+            buffer_end=tc.buffer_end,
+            window_size=tc.window_size,
+            ylim=tc.ylim,
+            taper_pc=tc.taper_pc,
+            dec_factor=tc.dec_factor,
+            filt_type=tc.filt_type,
+            filt_freq=tc.filt_freq,
+        )
+        save_and_show_figure(
+            fig,
+            tc.output_dir / f"{tc.sensor_name}_template_construction.png",
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(
+            f"Template construction figure saved to {tc.output_dir / tc.sensor_name}"
+        )

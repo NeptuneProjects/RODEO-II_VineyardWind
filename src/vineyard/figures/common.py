@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.offsetbox import AnchoredText
 from pydantic import BaseModel
@@ -21,7 +22,7 @@ class MapConfig(BaseModel):
     output: Path = "reports/figures/map.png"
 
 
-class SignalTemplateConfig(BaseModel):
+class SignalsConfig(BaseModel):
     """Configuration for signal template figure creation."""
 
     inventory_dir: Path | None = None
@@ -41,16 +42,65 @@ class SignalTemplateConfig(BaseModel):
     output: Path = "reports/figures/signal_templates.png"
 
 
+class TemplateConstructionConfig(BaseModel):
+    """Configuration for template construction figure.
+
+    Attributes:
+        sensor_name: Name of the sensor to plot templates for
+        strike_indices: List of strike indices to plot
+        output_dir: Directory to save the plots (defaults to reports/figures/template_construction/)
+
+    The following attributes are typically synced from ProcessConfig in workflow:
+        strike_index_path: Path to strike index CSV (from process.strike.strike_index)
+        strike_corr_path: Path to correlation matrix (from process.strike.strike_corr)
+        inventory_path: Path to sensor inventory (derived from process.inventory_path)
+        channel: Channel number (from process.template.sensors)
+        start_time: Start time (from process.start_time)
+        end_time: End time (from process.end_time)
+        buffer_start: Buffer before strike peak (from process.template.buffer_start)
+        buffer_end: Buffer after strike peak (from process.template.buffer_end)
+        window_size: Rolling window size (from process.template.window_size)
+        ylim: Y-axis limits (from process.template.sensors)
+        taper_pc: Taper percentage (from process.template.taper_pc)
+        dec_factor: Decimation factor (from process.template.dec_factor)
+        filt_type: Filter type (from process.template.filt_type)
+        filt_freq: Filter frequency (from process.template.filt_freq)
+    """
+
+    sensor_name: str = "vla1"
+    strike_indices: list[int] = [500, 1500, 2500]
+    output_dir: Path = Path("reports/figures/template_construction/")
+
+    # These will be synced from ProcessConfig
+    strike_index_path: Path | None = None
+    strike_corr_path: Path | None = None
+    inventory_path: Path | None = None
+    channel: int | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    buffer_start: float | None = None
+    buffer_end: float | None = None
+    window_size: int | None = None
+    ylim: tuple[float, float] | None = None
+    taper_pc: float | None = None
+    dec_factor: int | None = None
+    filt_type: str | None = None
+    filt_freq: float | list[float] | None = None
+
+
 class PlottingConfig(BaseModel):
     """Configuration for plotting operations.
 
     Attributes:
         map: Optional configuration for map figure creation
+        signal_template: Optional configuration for signal template figure
+        template_construction: Optional configuration for template construction figure
     """
 
     mpl_style: Path | None = None
     map: MapConfig | None = None
-    signal_template: SignalTemplateConfig | None = None
+    signal_template: SignalsConfig | None = None
+    template_construction: TemplateConstructionConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 
@@ -75,6 +125,47 @@ def add_panel_label(ax, label: str) -> None:
     anchored_text.patch.set_facecolor("white")
     anchored_text.zorder = 50
     ax.add_artist(anchored_text)
+
+
+def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str:
+    """Format tick label in simple scientific notation (10 ** n).
+
+    Args:
+        value: The tick value to format.
+        pos: Position (unused, required by matplotlib FuncFormatter).
+        mathtext: If True, use math font. If False, use regular figure font (via \\mathregular).
+
+    Returns:
+        Formatted string: "0" for zero, "C × 10^n" for others with superscripts.
+    """
+    if value == 0:
+        return "0"
+
+    # Get the exponent and mantissa
+    exponent = int(np.floor(np.log10(abs(value))))
+    mantissa = value / (10**exponent)
+
+    # If mantissa is very close to 1, just show 10 ** exponent
+    if np.isclose(mantissa, 1.0, atol=0.01):
+        if exponent == 0:
+            return "1"
+        if mathtext:
+            return f"$10^{{{exponent}}}$"
+        else:
+            return f"$\\mathregular{{10^{{{exponent}}}}}$"
+    elif np.isclose(mantissa, -1.0, atol=0.01):
+        if exponent == 0:
+            return "-1"
+        if mathtext:
+            return f"$-10^{{{exponent}}}$"
+        else:
+            return f"$\\mathregular{{-10^{{{exponent}}}}}$"
+    else:
+        # Include the mantissa
+        if mathtext:
+            return f"${mantissa:.1f} \\times 10^{{{exponent}}}$"
+        else:
+            return f"$\\mathregular{{{mantissa:.1f} \\times 10^{{{exponent}}}}}$"
 
 
 def save_and_show_figure(

@@ -78,6 +78,46 @@ class Config(BaseModel):
                     self.etl_config.inventory_dir
                 )
 
+        if self.plotting_config.template_construction is not None:
+            tc = self.plotting_config.template_construction
+            # Sync paths
+            if tc.strike_index_path is None:
+                tc.strike_index_path = self.process_config.strike_config.strike_index
+            if tc.strike_corr_path is None:
+                tc.strike_corr_path = self.process_config.strike_config.strike_corr
+            if tc.inventory_path is None:
+                tc.inventory_path = (
+                    self.process_config.inventory_path / f"inventory_{tc.sensor_name}.csv"
+                )
+            # Sync timing parameters
+            if tc.start_time is None:
+                tc.start_time = self.process_config.start_time
+            if tc.end_time is None:
+                tc.end_time = self.process_config.end_time
+            # Sync template parameters from process.template config
+            if tc.buffer_start is None:
+                tc.buffer_start = self.process_config.template_config.buffer_start
+            if tc.buffer_end is None:
+                tc.buffer_end = self.process_config.template_config.buffer_end
+            if tc.window_size is None:
+                tc.window_size = self.process_config.template_config.window_size
+            if tc.taper_pc is None:
+                tc.taper_pc = self.process_config.template_config.taper_pc
+            if tc.dec_factor is None:
+                tc.dec_factor = self.process_config.template_config.dec_factor
+            if tc.filt_type is None:
+                tc.filt_type = self.process_config.template_config.filt_type
+            if tc.filt_freq is None:
+                tc.filt_freq = self.process_config.template_config.filt_freq
+            # Sync sensor-specific parameters (channel, ylim)
+            for sensor in self.process_config.template_config.sensors:
+                if sensor["name"] == tc.sensor_name:
+                    if tc.channel is None:
+                        tc.channel = sensor["channel"]
+                    if tc.ylim is None:
+                        tc.ylim = sensor.get("ylim")
+                    break
+
         return self
 
 

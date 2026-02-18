@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -74,7 +75,7 @@ def _plot_sensor_column(
     return im
 
 
-def plot_signal_templates(
+def plot_signals(
     inventory_dir: Path,
     example_signal: dict[str, any],
     whale_sensors: list[dict[str, any]],
