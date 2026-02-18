@@ -217,6 +217,6 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 [plotting.template_construction]
 sensor_name = "vla1"
 strike_indices = [30, 1900, 2908]
-output_dir = "reports/figures/template_construction/"
+output_dir = "reports/figures/strike_templates/"
 
 [plotting.denoising]

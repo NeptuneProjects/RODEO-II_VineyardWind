@@ -127,12 +127,11 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             filt_type=tc.filt_type,
             filt_freq=tc.filt_freq,
         )
+        outfile = tc.output_dir / f"{tc.sensor_name}_template_construction.png"
         save_and_show_figure(
             fig,
-            tc.output_dir / f"{tc.sensor_name}_template_construction.png",
+            outfile,
             show=show,
             savefig_kwargs=config.savefig_kwargs,
         )
-        logging.info(
-            f"Template construction figure saved to {tc.output_dir / tc.sensor_name}"
-        )
+        logging.info(f"Template construction figure saved to {outfile}")
