@@ -91,6 +91,10 @@ class Config(BaseModel):
                 self.plotting_config.whale_tracking.whale_bearings = (
                     self.tdoa_config.localization_file
                 )
+            if self.plotting_config.whale_tracking.time_ranges is None:
+                self.plotting_config.whale_tracking.time_ranges = (
+                    self.process_config.time_ranges
+                )
 
         if self.plotting_config.signal_template is not None:
             if self.plotting_config.signal_template.inventory_dir is None:
@@ -146,6 +150,13 @@ class Config(BaseModel):
             if dn.template_data is None:
                 dn.template_data = (
                     self.process_config.whale_template_config.template_data
+                )
+
+        if self.plotting_config.correlation is not None:
+            corr = self.plotting_config.correlation
+            if corr.strike_window_size is None:
+                corr.strike_window_size = (
+                    self.process_config.template_config.window_size
                 )
 
         return self

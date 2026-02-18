@@ -12,6 +12,15 @@ from pydantic import BaseModel, model_validator
 from tritonoa.data.time import TIME_PRECISION
 
 
+class CorrelationConfig(BaseModel):
+    """Configuration for correlation figure creation."""
+
+    corr_file: Path | None = None
+    window: float = 300.0
+    strike_window_size: int | None = None
+    output: Path = "reports/figures/strike_correlation.png"
+
+
 class DenoiseConfig(BaseModel):
     """Configuration for denoising figure creation."""
 
@@ -63,7 +72,21 @@ class WhaleTrackingConfig(BaseModel):
     turbine_data: Path | None = None
     active_turbine_name: str | None = None
     whale_bearings: Path | None = None
+    time_ranges: list[list[str]] | None = None
     output: Path = "reports/figures/whale_tracking.png"
+
+    @model_validator(mode="after")
+    def convert_to_np_datetime(self) -> "WhaleTrackingConfig":
+        """Convert time_ranges from lists of strings to lists of numpy datetime64 tuples."""
+        if self.time_ranges is not None:
+            self.time_ranges = [
+                (
+                    np.datetime64(start, TIME_PRECISION),
+                    np.datetime64(end, TIME_PRECISION),
+                )
+                for start, end in self.time_ranges
+            ]
+        return self
 
 
 class SignalsConfig(BaseModel):
@@ -147,6 +170,7 @@ class PlottingConfig(BaseModel):
     signal_template: SignalsConfig | None = None
     template_construction: TemplateConstructionConfig | None = None
     denoising: DenoiseConfig | None = None
+    correlation: CorrelationConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 

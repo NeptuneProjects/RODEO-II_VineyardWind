@@ -28,6 +28,7 @@ from vineyard.figures.common import (
     add_panel_label,
     save_and_show_figure,
 )
+from vineyard.figures.corr import plot_correlations
 from vineyard.figures.denoise import plot_denoising
 from vineyard.figures.experiment import plot_experiment_setup
 from vineyard.figures.whale import plot_whale_tracking
@@ -89,6 +90,7 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             turbine_data=config.whale_tracking.turbine_data,
             active_turbine_name=config.whale_tracking.active_turbine_name,
             whale_bearings=config.whale_tracking.whale_bearings,
+            time_ranges=config.whale_tracking.time_ranges,
         )
         save_and_show_figure(
             fig,
@@ -181,3 +183,19 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             savefig_kwargs=config.savefig_kwargs,
         )
         logging.info(f"Denoising figure saved to {dn.output}")
+
+    if config.correlation is not None:
+        logging.info("Creating correlation figure...")
+        corr = config.correlation
+        fig = plot_correlations(
+            corr_file=corr.corr_file,
+            window=corr.window,
+            strike_window_size=corr.strike_window_size,
+        )
+        save_and_show_figure(
+            fig,
+            corr.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"Correlation figure saved to {corr.output}")
