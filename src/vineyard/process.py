@@ -382,6 +382,7 @@ def _build_sensor_templates_rolling(
             g["end_sample"][i] = end_index + ref_shift
 
             if plot_dir:
+                time = np.arange(len(template)) / fs
                 title = (
                     f"{name.upper()} - Strike {i} - {strike_index.item(i, 'start_time')}\n"
                     f"Rolling Window: [{window_start}, {window_end})"
@@ -389,7 +390,7 @@ def _build_sensor_templates_rolling(
                 savepath = plot_dir / name
                 savepath.mkdir(parents=True, exist_ok=True)
                 fig = plot_template(
-                    traces, template, reference_ind, title=title, ylim=ylim
+                    time, traces, template, reference_ind, title=title, ylim=ylim
                 )
                 fig.savefig(
                     savepath / f"{name}_strike_{i:04d}_template.png",
