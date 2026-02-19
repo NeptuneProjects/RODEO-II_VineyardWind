@@ -225,8 +225,8 @@ def read_sensor_positions(
     lon0 = df["ref_lon"].head(1).item()
 
     # Return sensor positions (excluding last row which is reference) and reference lat/lon
-    sensor_eastings = df["easting"].unique().to_list()
-    sensor_northings = df["northing"].unique().to_list()
+    sensor_eastings = df["easting"].unique(maintain_order=True).to_list()
+    sensor_northings = df["northing"].unique(maintain_order=True).to_list()
 
     return sensor_eastings, sensor_northings, lat0, lon0
 
