@@ -572,6 +572,45 @@ def build_templates(
         )
 
 
+def _compute_noise_reduction(
+    denoised_file: Path, strike_index_file: Path
+) -> pl.DataFrame:
+    ds = read_hdf5(denoised_file)
+    fs = ds.stats.sampling_rate
+    start_buffer = int(0.9 * fs)
+    end_buffer = int(0.7 * fs)
+
+    df = pl.read_csv(strike_index_file, try_parse_dates=True).filter(
+        pl.col("sensor") == denoised_file.stem
+    )
+
+    rms_df = pl.DataFrame(
+        {
+            "global_sample": df["global_sample"],
+            "global_start": df["global_sample"] - start_buffer,
+            "global_end": df["global_sample"] + end_buffer,
+            "orig_rms_db": np.zeros(len(df)),
+            "filt_rms_db": np.zeros(len(df)),
+            "rms_diff_db": np.zeros(len(df)),
+        }
+    )
+
+    for i, row in enumerate(df.iter_rows(named=True)):
+        strike_index = row["global_sample"]
+        orig_data = ds.data[0, strike_index - start_buffer : strike_index + end_buffer]
+        filt_data = ds.data[1, strike_index - start_buffer : strike_index + end_buffer]
+
+        # Calculate RMS in dB re 1 uPa
+        orig_data_rms_db = 20 * np.log10(np.sqrt(np.mean(orig_data**2)))
+        filt_data_rms_db = 20 * np.log10(np.sqrt(np.mean(filt_data**2)))
+
+        rms_df[i, "orig_rms_db"] = orig_data_rms_db
+        rms_df[i, "filt_rms_db"] = filt_data_rms_db
+        rms_df[i, "rms_diff_db"] = orig_data_rms_db - filt_data_rms_db
+
+    return rms_df
+
+
 def _construct_template_signal(
     signal: ArrayLike,
     strike_inds: list[int],
@@ -672,6 +711,7 @@ def denoise_strikes(
         strike_index_path: Path to the CSV file containing strike indices.
         template_path: Path to the HDF5 file containing templates for each sensor.
     """
+    mean_reduction, median_reduction = [], []
     for sensor in config.sensors:
         ds, strike_index, templates, start_samples, end_samples = (
             readers.read_denoise_data(
@@ -715,9 +755,26 @@ def denoise_strikes(
                 2: "Rejected Signal",
             },
         }
-        save_dir = config.denoised_data
-        save_dir.mkdir(parents=True, exist_ok=True)
-        ds.write_hdf5(save_dir / f"{sensor['name']}.h5")
+        output_file = config.denoised_data / f"{sensor['name']}.h5"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        ds.write_hdf5(output_file)
+
+        df = _compute_noise_reduction(output_file, config.strike_index)
+        df.write_csv(config.denoised_data / f"{sensor['name']}_noise_reduction.csv")
+        mean_reduction.append(df["rms_diff_db"].mean())
+        median_reduction.append(df["rms_diff_db"].median())
+        logging.info(f"Denoised data for {sensor['name']} saved to {output_file}.")
+
+    pl.DataFrame(
+        {
+            "sensor": [s["name"] for s in config.sensors],
+            "mean_reduction_db": mean_reduction,
+            "median_reduction_db": median_reduction,
+        }
+    ).write_csv(config.denoised_data / "noise_reduction_summary.csv")
+    logging.info(
+        f"Noise reduction summary saved to {config.denoised_data / 'noise_reduction_summary.csv'}."
+    )
 
 
 def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
