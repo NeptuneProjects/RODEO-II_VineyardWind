@@ -172,14 +172,26 @@ ambiguity_lower_bound = 90.0                              # degrees
 ambiguity_upper_bound = 270.0                             # degrees
 dwdt_threshold = 0.25                                     # degrees per second
 smoothing_window = 10                                     # number of calls
-speed_upper_bound = 35.0                                  # km/h
+speed_upper_bound = 20.0                                  # km/h
 
 [plotting]
 savefig_kwargs = { bbox_inches = "tight", dpi = 300, facecolor = "white" }
 mpl_style = "config/scirep_fig_style.mplstyle"
 
-# [plotting.whale_tracking]
-# output = "reports/figures/whale_tracking.png"
+[plotting.whale_tracking]
+output = "reports/figures/whale_tracking.png"
+
+# [plotting.tdoa_sensitivity]
+# sensor_data = "data/sensors.csv"
+# grid_extent_km = [
+#     -100.0,
+#     100.0,
+#     -180.0,
+#     20.0,
+# ] # [e_min, e_max, n_min, n_max] in km
+# grid_resolution = 300
+# query_point_km = [-40.0, -70.0] # [easting_km, northing_km] relative to VLA1
+# output = "reports/figures/tdoa_sensitivity.png"
 
 # [plotting.signal_template]
 # col_titles = ["3DVHA", "VLA1", "VLA2"]
@@ -239,7 +251,7 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 # image_file = "reports/scirep/windfarm.png"
 # output = "reports/figures/experiment_setup.png"
 
-[plotting.correlation]
-corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
-window = 120.0
-output = "reports/figures/strike_correlation.png"
+# [plotting.correlation]
+# corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
+# window = 120.0
+# output = "reports/figures/strike_correlation.png"
