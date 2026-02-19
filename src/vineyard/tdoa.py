@@ -29,7 +29,7 @@ class LocalizationConfig(BaseModel):
     ambiguity_upper_bound: float = 270.0
     dwdt_threshold: float = 0.25  # degrees per second
     smoothing_window: int = 10
-    speed_upper_bound: float = 35.0  # m/s
+    speed_upper_bound: float = 35.0  # km/h
 
 
 @dataclass
