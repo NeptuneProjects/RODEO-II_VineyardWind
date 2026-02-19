@@ -25,12 +25,14 @@ import matplotlib.pyplot as plt
 from vineyard.figures.common import (
     WhaleTrackingConfig,
     PlottingConfig,
+    TDOASensitivityConfig,
     add_panel_label,
     save_and_show_figure,
 )
 from vineyard.figures.corr import plot_correlations
 from vineyard.figures.denoise import plot_denoising
 from vineyard.figures.experiment import plot_experiment_setup
+from vineyard.figures.tdoa_sensitivity import plot_tdoa_sensitivity
 from vineyard.figures.whale import plot_whale_tracking
 from vineyard.figures.signals import plot_signals
 from vineyard.figures.templates import plot_strike_template
@@ -38,6 +40,7 @@ from vineyard.figures.templates import plot_strike_template
 __all__ = [
     # Common utilities
     "PlottingConfig",
+    "TDOASensitivityConfig",
     "WhaleTrackingConfig",
     "add_panel_label",
     "save_and_show_figure",
@@ -47,6 +50,8 @@ __all__ = [
     "plot_signals",
     # Template construction figures
     "plot_strike_template",
+    # TDOA sensitivity figure
+    "plot_tdoa_sensitivity",
     # Orchestration
     "make_figures",
 ]
@@ -199,3 +204,21 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             savefig_kwargs=config.savefig_kwargs,
         )
         logging.info(f"Correlation figure saved to {corr.output}")
+
+    if config.tdoa_sensitivity is not None:
+        logging.info("Creating TDOA sensitivity figure...")
+        ts = config.tdoa_sensitivity
+        fig = plot_tdoa_sensitivity(
+            sensor_data=ts.sensor_data,
+            grid_extent_km=ts.grid_extent_km,
+            grid_resolution=ts.grid_resolution,
+            query_point_km=ts.query_point_km,
+            figsize=ts.figsize,
+        )
+        save_and_show_figure(
+            fig,
+            ts.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"TDOA sensitivity figure saved to {ts.output}")

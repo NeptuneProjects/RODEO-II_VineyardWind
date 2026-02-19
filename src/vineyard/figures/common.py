@@ -155,6 +155,17 @@ class TemplateConstructionConfig(BaseModel):
     filt_freq: float | list[float] | None = None
 
 
+class TDOASensitivityConfig(BaseModel):
+    """Configuration for the TDOA localization sensitivity figure."""
+
+    sensor_data: Path = "data/sensors.csv"
+    grid_extent_km: tuple[float, float, float, float] | None = None
+    grid_resolution: int = 300
+    query_point_km: tuple[float, float] | None = None
+    figsize: tuple[float, float] = (9.0, 4.5)
+    output: Path = "reports/figures/tdoa/tdoa_sensitivity.png"
+
+
 class PlottingConfig(BaseModel):
     """Configuration for plotting operations.
 
@@ -171,6 +182,7 @@ class PlottingConfig(BaseModel):
     template_construction: TemplateConstructionConfig | None = None
     denoising: DenoiseConfig | None = None
     correlation: CorrelationConfig | None = None
+    tdoa_sensitivity: TDOASensitivityConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 
