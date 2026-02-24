@@ -19,7 +19,7 @@ def next_pow2(n: int) -> int:
     return 1 << (n - 1).bit_length()
 
 
-def _plot_sensor_column(
+def plot_sensor_column(
     ax_time: Axes,
     ax_spec: Axes,
     times: np.ndarray,
@@ -124,7 +124,7 @@ def plot_signals(
     times = np.arange(ds.data.shape[1]) / fs
     data = ds.data[0]
 
-    im = _plot_sensor_column(
+    im = plot_sensor_column(
         ax_time=ax_time_example,
         ax_spec=ax_spec_example,
         times=times,
@@ -191,7 +191,7 @@ def plot_signals(
             data = readers.calibrate(calibration_dir, data, fs, sensor["name"])
 
         ax_time, ax_spec = whale_axes[i]
-        im = _plot_sensor_column(
+        im = plot_sensor_column(
             ax_time=ax_time,
             ax_spec=ax_spec,
             times=times,
@@ -243,7 +243,7 @@ def plot_signals(
                         data = readers.calibrate_vla(cal_file, data, fs)
 
             ax_time, ax_spec = strike_axes[i]
-            im = _plot_sensor_column(
+            im = plot_sensor_column(
                 ax_time=ax_time,
                 ax_spec=ax_spec,
                 times=times,
