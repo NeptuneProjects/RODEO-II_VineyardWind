@@ -137,12 +137,12 @@ def compute_lat_lon(easting, northing, lat0, lon0):
 
 
 def compute_time_gates(
-    distance_lut: Path, ref_sound_speed: float = 1500.0
+    distance_lut: Path, ref_sound_speed: float = 1500.0, design_factor: float = 1.1
 ) -> dict[tuple[str, str], np.ndarray]:
     d_3dvha_vla1, d_3dvha_vla2, d_vla1_vla2 = read_distances(distance_lut)
-    t_3dvha_vla1 = d_3dvha_vla1 / ref_sound_speed
-    t_3dvha_vla2 = d_3dvha_vla2 / ref_sound_speed
-    t_vla1_vla2 = d_vla1_vla2 / ref_sound_speed
+    t_3dvha_vla1 = design_factor * d_3dvha_vla1 / ref_sound_speed
+    t_3dvha_vla2 = design_factor * d_3dvha_vla2 / ref_sound_speed
+    t_vla1_vla2 = design_factor * d_vla1_vla2 / ref_sound_speed
     return {
         ("3dvha", "vla1"): t_3dvha_vla1,
         ("3dvha", "vla2"): t_3dvha_vla2,
@@ -392,6 +392,125 @@ def correlate_detections_triplet(
     return correlations
 
 
+def correlate_detections_triplet_gated(
+    times: dict[str, np.ndarray],
+    time_gates: dict[tuple[str, str], float],
+    reference_site: str,
+) -> list[CorrelatedDetection]:
+    """
+    Correlate detections anchored on a single reference site, returning only
+    complete triplets.
+
+    Unlike ``correlate_detections_triplet``, this function:
+
+    - Uses a single user-specified reference site (no multi-reference voting or
+      merging step).
+    - Discards any detection not confirmed at **all three** sites.
+    - Assumes detections are spaced beyond the time gate, so at most one match
+      per window is expected; the first candidate is taken.
+    - Still enforces the mutual A–B time-gate to guard against coincidental
+      in-window matches at the two non-reference sites.
+
+    Parameters
+    ----------
+    times : dict[str, np.ndarray]
+        Detection times per site.
+    time_gates : dict[tuple[str, str], float]
+        Maximum time delay in seconds for each site pair.
+    reference_site : str
+        Site that must have a detection for any triplet to be recorded.
+
+    Returns
+    -------
+    list[CorrelatedDetection]
+        Complete triplets only.
+    """
+    sites = list(times.keys())
+    if reference_site not in sites:
+        raise ValueError(f"Reference site '{reference_site}' not found in times dict")
+
+    other_sites = [s for s in sites if s != reference_site]
+    if len(other_sites) != 2:
+        raise ValueError("Expected exactly 3 sites")
+
+    site_a, site_b = other_sites
+    used_a: set[int] = set()
+    used_b: set[int] = set()
+    correlations: list[CorrelatedDetection] = []
+
+    gate_ref_a = time_gates.get(
+        (reference_site, site_a), time_gates.get((site_a, reference_site))
+    )
+    gate_ref_b = time_gates.get(
+        (reference_site, site_b), time_gates.get((site_b, reference_site))
+    )
+    gate_ab = time_gates.get((site_a, site_b), time_gates.get((site_b, site_a)))
+    for ref_time in times[reference_site]:
+        matches_a = find_matches_in_window(ref_time, times[site_a], gate_ref_a, used_a)
+        matches_b = find_matches_in_window(ref_time, times[site_b], gate_ref_b, used_b)
+
+        if not matches_a or not matches_b:
+            print(
+                f"Skipping reference time {ref_time} - matches A: {matches_a}, B: {matches_b}"
+            )
+            continue
+
+        idx_a = matches_a[0]
+        idx_b = matches_b[0]
+
+        # Enforce mutual A–B consistency
+        diff_ab = abs(
+            (times[site_a][idx_a] - times[site_b][idx_b]) / np.timedelta64(1, "s")
+        )
+        if diff_ab > gate_ab:
+            print(
+                f"Skipping reference time {ref_time} - A-B difference {diff_ab} exceeds gate {gate_ab}"
+            )
+            continue
+
+        corr = CorrelatedDetection(reference_site=reference_site)
+        corr.__dict__[f"site_{reference_site}"] = ref_time
+        corr.__dict__[f"site_{site_a}"] = times[site_a][idx_a]
+        corr.__dict__[f"site_{site_b}"] = times[site_b][idx_b]
+        correlations.append(corr)
+        used_a.add(idx_a)
+        used_b.add(idx_b)
+
+    return correlations
+
+
+def estimate_tdoa(
+    whale_call_data: Path,
+    distance_lut: Path,
+    reference_site: str,
+) -> pl.DataFrame:
+    """Estimate TDOA requiring detections at all three sites, anchored on
+    ``reference_site``.
+
+    This is a simplified alternative to ``estimate_tdoa``: it uses a single
+    reference site as a mandatory gate, discards partial detections, and
+    skips the multi-reference voting / merge step.
+
+    Args:
+        whale_call_data: Path to whale call detection times.
+        distance_lut: Path to distance lookup table.
+        reference_site: Site that must have a detection for a triplet to be
+            kept (e.g. ``'vla2'``).
+
+    Returns:
+        DataFrame with correlated triplets and TDOA values.
+    """
+    times = read_whale_call_times(whale_call_data)
+    time_gates = compute_time_gates(distance_lut)
+    correlations = correlate_detections_triplet_gated(
+        times, time_gates, reference_site=reference_site
+    )
+    print(f"Complete triplets anchored on '{reference_site}': {len(correlations)}")
+    return correlations_to_dataframe(
+        correlations, reference_site=reference_site
+    ).with_columns(pl.col("timestamp").dt.epoch(time_unit="us").alias("unix_time_us"))
+
+
 def correlations_to_dataframe(
     correlations: list[CorrelatedDetection], reference_site: str = "3dvha"
 ) -> pl.DataFrame:
@@ -485,7 +604,7 @@ def estimate_range(df: pl.DataFrame, tangential_speed: float = 35.0) -> pl.DataF
     )
 
 
-def estimate_tdoa(
+def estimate_tdoa_greedy(
     whale_call_data: Path, distance_lut: Path, reference_site: str
 ) -> pl.DataFrame:
     """Estimate TDOA from whale call detection times and distance LUT.
@@ -544,7 +663,6 @@ def find_matches_in_window(
     # Get indices and filter out already used ones
     candidate_indices = np.where(in_window)[0]
     available_indices = [idx for idx in candidate_indices if idx not in used_indices]
-
     return available_indices
 
 
