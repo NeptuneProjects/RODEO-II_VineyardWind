@@ -280,7 +280,7 @@ def plot_template(
                 traces[i] - offset_idx * offset_spacing,
                 "tab:blue",
                 label="Reference",
-                linewidth=0.8,
+                linewidth=1.2,
             )
             ytick_labels.append(f"Reference {i}")
         else:
@@ -288,7 +288,7 @@ def plot_template(
                 time,
                 traces[i] - offset_idx * offset_spacing,
                 "k",
-                linewidth=0.8,
+                linewidth=0.7,
                 alpha=0.7,
             )
             ytick_labels.append(f"{i}")
