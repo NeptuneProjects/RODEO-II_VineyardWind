@@ -28,6 +28,8 @@ import vineyard.readers as readers
 from rodeo.utils import compute_array_size, initialize_julia
 from vineyard.figures.templates import plot_template
 
+logger = logging.getLogger(__name__)
+
 
 class DenoiseConfig(BaseModel):
     denoised_data: Path = "data/acoustic/denoised"
@@ -208,7 +210,7 @@ class Record:
         with h5py.File(path, "a") as file:
             # Create a new group for the station if it doesn't exist:
             if self.sensor in file:
-                logging.warning(
+                logger.warning(
                     f"Group {self.sensor} already exists in {path}. Overwriting."
                 )
                 del file[self.sensor]
@@ -264,7 +266,7 @@ def _build_sensor_templates_rolling(
 
     with h5py.File(template_data_path, "a") as f:
         if name in f:
-            logging.warning(
+            logger.warning(
                 f"Group {name} already exists in template_data. Overwriting."
             )
             del f[name]
@@ -399,7 +401,7 @@ def _build_sensor_templates_rolling(
                 )
                 plt.close(fig)
 
-    logging.info(f"Rolling templates for {name.upper()} saved to {template_data_path}")
+    logger.info(f"Rolling templates for {name.upper()} saved to {template_data_path}")
 
 
 def _build_strikes_df_per_sensor(
@@ -438,7 +440,7 @@ def _build_strikes_df_per_sensor(
         A DataFrame containing the detected strikes for the sensor and time range.
     """
     name, channel, distance_s, threshold = tuple(sensor.values())
-    logging.info(f"Processing sensor: {name}, channel: {channel}")
+    logger.info(f"Processing sensor: {name}, channel: {channel}")
 
     ds = read_and_process(
         inventory_path,
@@ -458,7 +460,7 @@ def _build_strikes_df_per_sensor(
         * ds.stats.sampling_rate
     ).astype(int)
 
-    logging.info(f"Found {len(peaks)} peaks for sensor {name}.")
+    logger.info(f"Found {len(peaks)} peaks for sensor {name}.")
     return DataFrame(
         {
             "sensor": name,
@@ -500,7 +502,7 @@ def build_strikes_df(
         strike_index_offset = 0
 
         for i, (time_start, time_end) in enumerate(time_ranges):
-            logging.info(
+            logger.info(
                 f"Processing sensor {sensor['name']}, time range "
                 f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
             )
@@ -520,7 +522,7 @@ def build_strikes_df(
         all_dfs.extend(sensor_dfs)
 
     concat(all_dfs).write_csv(config.strike_index)
-    logging.info(f"Strikes extracted and saved to {config.strike_index}.")
+    logger.info(f"Strikes extracted and saved to {config.strike_index}.")
 
 
 def build_templates(
@@ -536,7 +538,7 @@ def build_templates(
         name = sensor["name"]
         channel = sensor["channel"]
         ylim = sensor["ylim"]
-        logging.info(f"Processing sensor: {name} channel {channel}.")
+        logger.info(f"Processing sensor: {name} channel {channel}.")
 
         ds, strike_index = readers.read_strike_data(
             inventory_path / f"inventory_{name}.csv",
@@ -570,6 +572,8 @@ def build_templates(
             plot_dir=config.plot_dir,
             ylim=ylim,
         )
+
+    logger.info(f"Templates built and saved to {config.template_data}.")
 
 
 def _compute_noise_reduction(
@@ -759,11 +763,11 @@ def denoise_strikes(
         output_file.parent.mkdir(parents=True, exist_ok=True)
         ds.write_hdf5(output_file)
 
-        df = _compute_noise_reduction(output_file, config.strike_index)
+        df = _compute_noise_reduction(output_file, strike_index_path)
         df.write_csv(config.denoised_data / f"{sensor['name']}_noise_reduction.csv")
         mean_reduction.append(df["rms_diff_db"].mean())
         median_reduction.append(df["rms_diff_db"].median())
-        logging.info(f"Denoised data for {sensor['name']} saved to {output_file}.")
+        logger.info(f"Denoised data for {sensor['name']} saved to {output_file}.")
 
     pl.DataFrame(
         {
@@ -772,7 +776,7 @@ def denoise_strikes(
             "median_reduction_db": median_reduction,
         }
     ).write_csv(config.denoised_data / "noise_reduction_summary.csv")
-    logging.info(
+    logger.info(
         f"Noise reduction summary saved to {config.denoised_data / 'noise_reduction_summary.csv'}."
     )
 
@@ -804,7 +808,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
         times = ds.time_vector[peaks]
         del cf, ds
         gc.collect()
-        logging.info(f"Detected {len(peaks)} whale calls on sensor {sensor['name']}.")
+        logger.info(f"Detected {len(peaks)} whale calls on sensor {sensor['name']}.")
 
         dfs.append(
             pl.DataFrame(
@@ -823,6 +827,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
         pl.col("timestamp").dt.epoch(time_unit="us").alias("unix_time_us")
     )
     df.write_csv(config.output_file)
+    logger.info(f"Whale call detections saved to {config.output_file}.")
 
 
 def extract_whale_templates(
@@ -852,7 +857,7 @@ def extract_whale_templates(
                 template.stats.units = "uPa"
                 g = f.create_group(f"{sensor_name}/{call_type}")
                 template.create_hdf5_dataset(g)
-                logging.info(
+                logger.info(
                     f"Saved template for whale {call_type} on {sensor_name} to {config.template_data}"
                 )
 
@@ -889,18 +894,28 @@ def process_data(config: ProcessConfig) -> None:
         config: ProcessConfig instance containing the configuration for
             data processing.
     """
+    logger.info("==== BEGIN STRIKE DETECTION ====")
     build_strikes_df(
         config.strike_config,
         config.start_time,
         config.time_ranges,
         config.inventory_path,
     )
+    logger.info("==== STRIKE DETECTION COMPLETE ====")
+
+    logger.info("==== BEGIN STRIKE SAVING ====")
     save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
+    logger.info("==== STRIKE SAVING COMPLETE ====")
+
+    logger.info("==== BEGIN STRIKE CROSS-CORRELATION ====")
     xcorr_strike_pairs(
         config.strike_config.strike_corr_config,
         config.strike_config.strike_data,
         config.strike_config.strike_corr,
     )
+    logger.info("==== STRIKE CROSS-CORRELATION COMPLETE ====")
+
+    logger.info("==== BEGIN TEMPLATE BUILDING ====")
     build_templates(
         config.template_config,
         config.start_time,
@@ -910,6 +925,9 @@ def process_data(config: ProcessConfig) -> None:
         config.strike_config.strike_index,
         config.strike_config.strike_corr,
     )
+    logger.info("==== TEMPLATE BUILDING COMPLETE ====")
+
+    logger.info("==== BEGIN STRIKE DENOISING ====")
     denoise_strikes(
         config.denoise_config,
         config.start_time,
@@ -919,13 +937,23 @@ def process_data(config: ProcessConfig) -> None:
         config.strike_config.strike_index,
         config.template_config.template_data,
     )
+    logger.info("==== STRIKE DENOISING COMPLETE ====")
+
+    logger.info("==== BEGIN WHALE TEMPLATE EXTRACTION ====")
     extract_whale_templates(
         config.whale_template_config, config.inventory_path, config.calibration_dir
     )
+    logger.info("==== WHALE TEMPLATE EXTRACTION COMPLETE ====")
+
+    logger.info("==== BEGIN PULSE COMPRESSION ====")
     pulse_compress(config.denoise_config, config.whale_template_config)
+    logger.info("==== PULSE COMPRESSION COMPLETE ====")
+
+    logger.info("==== BEGIN WHALE CALL DETECTION ====")
     detect_whale_calls(
         config.whale_detection_config, config.denoise_config.denoised_data
     )
+    logger.info("==== WHALE CALL DETECTION COMPLETE ====")
 
 
 def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -> None:
@@ -938,7 +966,7 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
             for whale call templates.
     """
     for sensor in denoise_config.sensors:
-        logging.info(f"Processing sensor: {sensor['name']} for pulse compression.")
+        logger.info(f"Processing sensor: {sensor['name']} for pulse compression.")
         sensor_name = sensor["name"]
 
         ds = read_hdf5(denoise_config.denoised_data / f"{sensor_name}.h5")
@@ -978,7 +1006,7 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
         }
 
         new_ds.write_hdf5(denoise_config.denoised_data / f"{sensor_name}_pc.h5")
-        logging.info(
+        logger.info(
             f"Pulse compression completed for sensor: {sensor_name}. "
             f"Saved to {denoise_config.denoised_data / f'{sensor_name}_pc.h5'}"
         )
@@ -1025,6 +1053,8 @@ def save_strikes(
             g = file.create_group(f"{sensor}/{strike_index:04d}")
             ds.create_hdf5_dataset(g)
 
+    logger.info(f"Strikes saved to {config.strike_data}.")
+
 
 def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) -> Record:
     """Compute the cross-correlation of strike pairs for a single sensor.
@@ -1044,14 +1074,14 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
     time_diff = np.full((num_detections, num_detections), np.nan)
     max_corr = np.full((num_detections, num_detections), np.nan)
 
-    logging.info(f"Data shape: {num_detections} detections.")
-    logging.info(
+    logger.info(f"Data shape: {num_detections} detections.")
+    logger.info(
         f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024 ** 3):.2f} GB."
     )
 
     jl = initialize_julia("CrossCorr")
     threads = jl.seval("Threads.nthreads()")
-    logging.info(f"Number of Julia threads: {threads}.")
+    logger.info(f"Number of Julia threads: {threads}.")
 
     jl_data = jl.seval("x -> Matrix{Float64}(x)")(data)
     jl_time = jl.seval("x -> Vector{Float64}(x)")(t0)
@@ -1061,10 +1091,10 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
     max_corr = np.array(max_corr)
     shifts = np.array(shifts)
 
-    logging.info(
+    logger.info(
         f"Computed time_diff, max_corr, and shifts for sensor {sensor.upper()}."
     )
-    logging.info(
+    logger.info(
         f"Shape of time_diff: {time_diff.shape}, max_corr: {max_corr.shape}, "
         f"shifts: {shifts.shape}."
     )
@@ -1101,10 +1131,11 @@ def xcorr_strike_pairs(
     os.environ["PYTHON_JULIACALL_HANDLE_SIGNALS"] = "yes"
     with h5py.File(strike_data_path, "r") as file:
         for sensor, sensor_group in file.items():
-            logging.info(f"Processing sensor {sensor.upper()}.")
+            logger.info(f"Processing sensor {sensor.upper()}.")
             record = xcorr_sensor(
                 sensor, sensor_group, config.model_dump(exclude={"max_workers"})
             )
             record.save_h5(output_path)
-            logging.info(f"Processed sensor {sensor.upper()}.")
-    return
+            logger.info(f"Processed sensor {sensor.upper()}.")
+
+    logger.info(f"Cross-correlation of strike pairs saved to {output_path}.")
