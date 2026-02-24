@@ -47,21 +47,10 @@ If the flag is not provided, the workflow will look for a default configuration 
 
 The individual steps of the workflow can be run using the following commands:
 1. Run the ETL job:
-   `workflow etl --config config/config.toml`
+   `workflow etl`
 2. Run all data processing steps:  
-   `workflow process --config config/config.toml`
-
-## Remaining Steps
-
-- [ ] Detect whale calls. Suggest 1) filtering the final trace to 15-30 Hz to remove noise and 2) conduct peak detection on the entire denoised signal. This will allow tracking of whale calls including when pile driving is not occurring. Overlaying periods of pile driving with the whale call detections might yield insights.
-- [ ] Localize the whale calls using the TDOA estimates.
-- [ ] Estimate levels. Compare to the original signal and the denoised signal. This will help us understand how much of the pile driving noise is being removed by the filtering step.
-
-<!-- 
-9. Pulse compress the denoised signals with the whale call:  
-   `python scripts/process/denoised_pulse_compression.py`
-10. Find peaks and compute TDOA estimates:  
-   `python scripts/process/tdoa_compute.py`
-11. Localize the TDOA estimates:  
-    `python scripts/process/tdoa_localize.py`
--->
+   `workflow process`
+3. Run the localization step:  
+   `workflow localize`
+4. Run the plotting step:  
+   `workflow plot`
