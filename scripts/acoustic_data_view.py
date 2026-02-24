@@ -24,7 +24,6 @@ from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_PRECISION, convert_datetime64_to_string
 from tritonoa.data.reader import read_inventory
 
-from vineyard.config import get_path
 from vineyard.plotting import (
     plot_3dvha_data,
     plot_all_acoustic_data,
@@ -34,6 +33,8 @@ from vineyard.plotting import (
 
 dotenv.load_dotenv()
 
+INVENTORY_PATH = Path.cwd() / "data" / "acoustic"
+SAVE_PATH = Path.cwd() / "data" / "acoustic" / "data_view"
 nperseg = 256
 STFT_PARAMS = {
     "nperseg": nperseg,
@@ -43,9 +44,9 @@ STFT_PARAMS = {
 SENSORS = {
     "all": {
         "channels_to_plot": {
-            "3dvha": list(range(4, 8)),
+            "3dvha": [7],
             "vla1": [3],
-            "vla2": [1],
+            "vla2": [0],
         },
     },
     "3dvha": {
@@ -212,21 +213,19 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--start",
         type=str,
-        # default="2023-12-01T21:44:00",
-        default="2023-12-01T22:25:00",
+        default="2023-12-01T20:00:00",
         help="Start time of the data to extract.",
     )
     parser.add_argument(
         "--end",
         type=str,
-        # default="2023-12-02T01:31:00",
-        default="2023-12-01T22:26:00",
+        default="2023-12-01T23:30:00",
         help="End time of the data to extract.",
     )
     parser.add_argument(
         "--multi",
         action="store_true",
-        default=False,
+        default=True,
         help="Generate multiple figures with a specified interval.",
     )
     parser.add_argument(
@@ -238,13 +237,13 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--savefig",
         action="store_true",
-        default=False,
+        default=True,
         help="Save the figure instead of showing it.",
     )
     parser.add_argument(
         "--target-fs",
         type=float,
-        default=100.0,
+        default=1000.0,
         help="Decimation factor for the data.",
     )
     parser.add_argument(
@@ -258,7 +257,7 @@ def setup_parser() -> ArgumentParser:
         "--filt-freq",
         type=float,
         nargs="+",
-        default=[15.0, 35.0],
+        default=[15.0, 100.0],
         help="Frequency or frequencies for the filter.",
     )
     parser.add_argument(
@@ -270,7 +269,7 @@ def setup_parser() -> ArgumentParser:
     parser.add_argument(
         "--fmax",
         type=float,
-        default=35.0,
+        default=100,
         help="Maximum frequency for the spectrogram.",
     )
     return parser
@@ -284,7 +283,11 @@ def setup_plotting(
 ) -> tuple[Callable, Callable]:
     match sensor:
         case "all":
-            invs = [get_path(f"{s}_inventory") for s in SENSORS.keys() if s != "all"]
+            invs = [
+                INVENTORY_PATH / f"inventory_{s}.csv"
+                for s in SENSORS.keys()
+                if s != "all"
+            ]
             plotter = plot_all_acoustic_data
             dataloader = partial(
                 dataloader_all_sensors,
@@ -298,7 +301,7 @@ def setup_plotting(
                 for sensor, inv in zip(SENSORS.keys(), invs)
             ]
         case "3dvha":
-            inv = get_path(f"{sensor}_inventory")
+            inv = INVENTORY_PATH / f"inventory_{sensor}.csv"
             plotter = plot_3dvha_data
             dataloader = partial(
                 dataloader_3dvha,
@@ -310,7 +313,7 @@ def setup_plotting(
             )
             logging.info(f"Using inventory for {sensor.upper()}: {inv.resolve()}")
         case "vla1" | "vla2":
-            inv = get_path(f"{sensor}_inventory")
+            inv = INVENTORY_PATH / f"inventory_{sensor}.csv"
             plotter = plot_shru_data
             dataloader = partial(
                 dataloader_shru,
@@ -337,8 +340,6 @@ def main(
     fmin: float = 10.0,
     fmax: float = 500.0,
 ) -> None:
-
-
 
     plotter, dataloader = setup_plotting(
         sensor,
@@ -368,9 +369,13 @@ def main(
         fig = plotter(data, title=title, **(STFT_PARAMS | {"fmin": fmin, "fmax": fmax}))
 
         if savefig:
-            savepath = (get_path(f"{sensor}_data_view") / f"{fmin}-{fmax}Hz")
-            savepath.mkdir(parents=True, exist_ok=True)
-            file = savepath / f"{sensor}_{start_str}-{end_str}.png"
+            file = (
+                SAVE_PATH
+                / sensor
+                / f"{fmin}-{fmax}Hz"
+                / f"{sensor}_{start_str}-{end_str}.png"
+            )
+            file.parent.mkdir(parents=True, exist_ok=True)
 
             fig.savefig(file, **SAVEFIG_KWARGS)
             plt.close(fig)
