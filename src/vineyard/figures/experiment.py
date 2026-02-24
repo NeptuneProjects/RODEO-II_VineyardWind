@@ -53,6 +53,24 @@ def plot_experiment_setup(
     )
     ax = axes[0]
     ax = plot_image(image_file, ax=ax)
+    ax.text(
+        0.87,
+        0.33,
+        "3DVHA",
+        transform=ax.transAxes,
+        ha="center",
+        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        zorder=40,
+    )
+    ax.text(
+        0.67,
+        0.4,
+        "VLA",
+        transform=ax.transAxes,
+        ha="center",
+        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        zorder=40,
+    )
 
     ax = axes[1]
     ax = create_map(
@@ -63,6 +81,44 @@ def plot_experiment_setup(
         turbine_locations,
         active_turbine,
         BBOX_INSET,
+    )
+    legend_bbox = (0.25, 0.9)
+    legend_ncol = 1
+    ax.legend(
+        facecolor="white",
+        edgecolor="black",
+        bbox_to_anchor=legend_bbox,
+        loc="center",
+        ncol=legend_ncol,
+        framealpha=1.0,
+        markerscale=0.8,
+    )
+    ax.text(
+        0.59,
+        0.4,
+        "3DVHA",
+        transform=ax.transAxes,
+        ha="center",
+        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        zorder=40,
+    )
+    ax.text(
+        0.73,
+        0.3,
+        "VLA1",
+        transform=ax.transAxes,
+        ha="center",
+        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        zorder=40,
+    )
+    ax.text(
+        0.9,
+        0.4,
+        "VLA2",
+        transform=ax.transAxes,
+        ha="center",
+        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        zorder=40,
     )
 
     fig.canvas.draw()
@@ -127,12 +183,12 @@ def create_map(
         bounds=bbox_inset,
         ax=ax,
         scale_bar=10,
-        levelsf=np.arange(-100, 10, 5),
         levelsc=np.arange(-100, 1, 5),
         meridians=0.2,
         parallels=0.1,
         parallel_labels=[0, 1, 0, 0],
         marker_size=100,
+        show_legend=False,
     )
     _create_context_inset(ax, bbox_inset, bounds=[[-72.5, -69.5], [40.5, 42.5]])
     add_panel_label(ax, "b")
