@@ -110,7 +110,6 @@ def _create_inner_map_panel(
         bounds=bbox_inset,
         ax=ax,
         scale_bar=10,
-        levelsf=np.arange(-100, 10, 5),
         levelsc=np.arange(-100, 1, 5),
         parallel_labels=[0, 1, 0, 0],
     )
@@ -143,7 +142,6 @@ def _create_outer_map_panel(
         meridians=0.5,
         parallels=0.5,
         shallowest_contour_depth=-1.0,
-        levelsf=np.arange(-2500, 100, 50),
         levelsc=np.arange(-2500, 40, 100),
         show_legend=False,
     )
@@ -280,7 +278,6 @@ def _plot_bathy(
     m: Basemap,
     ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
-    levelsf=np.arange(-100, 10, 5),
     levelsc=np.arange(-100, 1, 5),
 ) -> tuple[plt.contourf, Axes]:
 
@@ -289,21 +286,14 @@ def _plot_bathy(
     if ax is None:
         ax = plt.gca()
 
-    # Create a modified colormap truncated for shallow water and gray for
-    # positive values
-    n_bins = 256
-    colors_array = cmr.get_sub_cmap("cmo.deep_r", 0.5, 1.0)(np.linspace(0, 1, n_bins))
-    colors_list = np.vstack((colors_array, np.array([0.8, 0.8, 0.8, 0.8])))
-    custom_cmap = colors.ListedColormap(colors_list)
+    # Single solid water color with gray for land
+    water_color = cmr.get_sub_cmap("cmo.deep_r", 0.75, 0.76)(0.5)
+    land_color = np.array([0.8, 0.8, 0.8, 1.0])
+    custom_cmap = colors.ListedColormap([water_color, land_color])
 
     vmin = data.min()
-    vmax = max(data.max(), 0.1)  # Ensure positive range exists
-
-    # Create boundaries with n_bins below zero, 1 above zero
-    boundaries = np.linspace(vmin, 0, n_bins)
-    boundaries = np.append(boundaries, vmax)
-
-    # Create the BoundaryNorm
+    vmax = max(data.max(), 0.1)
+    boundaries = np.array([vmin, 0.0, vmax])
     norm = colors.BoundaryNorm(boundaries, custom_cmap.N)
 
     lonlon, latlat = np.meshgrid(lonvec, latvec)
@@ -313,7 +303,7 @@ def _plot_bathy(
         np.flipud(data),
         cmap=custom_cmap,
         norm=norm,
-        levels=levelsf,
+        levels=boundaries,
         latlon=True,
         ax=ax,
     )
@@ -385,7 +375,6 @@ def _plot_study_area(
     ax: Axes | None = None,
     scale_bar: int = 1,
     shallowest_contour_depth: float = 0.0,
-    levelsf=np.arange(-100, 10, 5),
     levelsc=np.arange(-100, 1, 5),
     meridians: float = 0.2,
     parallels: float = 0.2,
@@ -393,7 +382,8 @@ def _plot_study_area(
     parallel_labels: list[int] = [1, 0, 0, 0],
     marker_size: int = 50,
     show_legend: bool = True,
-    legend_loc: str | None = None,
+    legend_bbox: tuple[float, float] = (0.765, 0.15),
+    legend_ncol: int = 1,
     bearing_arc_range: tuple[float, float] | None = None,
     arc_range_km: Sequence[float] | None = None,
     arc_colors: Sequence[str] | None = None,
@@ -439,7 +429,6 @@ def _plot_study_area(
         m=m,
         ax=ax,
         shallowest_contour_depth=shallowest_contour_depth,
-        levelsf=levelsf,
         levelsc=levelsc,
     )
 
@@ -506,22 +495,13 @@ def _plot_study_area(
     ax.set_ylim(ylim)
 
     if show_legend:
-        if legend_loc == "inside":
-            leg = ax.legend(
-                facecolor="white",
-                edgecolor="black",
-                bbox_to_anchor=(0.8, 0.65),
-                loc="center",
-                ncol=1,
-            )
-        else:
-            leg = ax.legend(
-                facecolor="white",
-                edgecolor="black",
-                loc="upper center",
-                bbox_to_anchor=(0.5, -0.05),
-                ncol=3,
-            )
+        leg = ax.legend(
+            facecolor="white",
+            edgecolor="black",
+            bbox_to_anchor=legend_bbox,
+            loc="center",
+            ncol=legend_ncol,
+        )
         leg.get_frame().set_alpha(None)
 
     scalebar = AnchoredSizeBar(
