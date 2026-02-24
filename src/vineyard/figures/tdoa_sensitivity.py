@@ -32,15 +32,6 @@ def _gdop_grid(
 ) -> np.ndarray:
     """Compute GDOP over a 2D grid given three sensor positions (all in km).
 
-    GDOP (geometric dilution of precision) is sqrt(trace(inv(J^T J))), where J
-    is the 3×2 Jacobian of the hyperbolic TDOA equations evaluated at each grid
-    point. High GDOP indicates poor localization geometry.
-
-    For a 2×2 symmetric matrix M, trace(inv(M)) = trace(M) / det(M), so
-    GDOP = sqrt((m00 + m11) / (m00*m11 - m01^2)).
-
-    $$\text{GDOP} = \sqrt{\frac{\text{tr}(\mathbf{J}^\top \mathbf{J})}{\det(\mathbf{J}^\top \mathbf{J})}}$$
-
     Returns:
         2D array of GDOP values (NaN where geometry is singular or at sensor
         locations).
@@ -84,15 +75,6 @@ def _cost_grid(
     grid_n: np.ndarray,
 ) -> np.ndarray:
     """Compute MSE of TDOA hyperbolic residuals over a 2D grid (km²).
-
-    For a source at (qe, qn) the true range differences are computed, then the
-    squared residuals of all three hyperbolic equations are evaluated at every
-    grid point.  The MSE surface is minimised exactly at the true source
-    location and rises away from it; its shape reveals localization precision.
-
-    $$\mathcal{C}(\mathbf{x}) = \frac{1}{3} \sum_{(i,j),\in,\mathcal{P}} \bigl[\Delta_{ij}(\mathbf{x}) - \Delta_{ij}(\mathbf{q})\bigr]^2$$
-
-    where $\Delta_{ij}(\mathbf{p}) = |\mathbf{p} - \mathbf{s}_j| - |\mathbf{p} - \mathbf{s}_i|$ is the signed range difference at position $\mathbf{p}$, $\mathbf{q}$ is the true source, and $\mathcal{P} = {(0,1),(0,2),(1,2)}$ is the set of sensor pairs.
 
     Returns:
         2D array of MSE values in km².
@@ -222,13 +204,14 @@ def plot_tdoa_sensitivity(
         grid_n,
         log_cost,
         cmap="bone",
+        vmin=-4,
         vmax=2,
         shading="auto",
         rasterized=True,
     )
     _div_c = make_axes_locatable(ax_cost)
     _cax_c = _div_c.append_axes("right", size="4%", pad=0.05)
-    cb_c = fig.colorbar(im_c, cax=_cax_c, extend="max")
+    cb_c = fig.colorbar(im_c, cax=_cax_c, extend="both")
     cb_c.set_label(r"$\mathdefault{log}_{10}(\mathdefault{MSE})$ (km²)")
 
     # Range differences over the grid and at the query source
@@ -239,7 +222,6 @@ def plot_tdoa_sensitivity(
     qr1 = float(np.sqrt((qe - e1) ** 2 + (qn - n1) ** 2))
     qr2 = float(np.sqrt((qe - e2) ** 2 + (qn - n2) ** 2))
 
-    _LOP_COLORS = ["#E07B54", "#66C2A5", "#8DA0CB"]
     _LOP_COLORS = ["c", "m", "y"]
     _LOP_LABELS = [
         "3DVHA-VLA1 line of constant TDOA",
@@ -260,32 +242,26 @@ def plot_tdoa_sensitivity(
             linewidths=1.5,
         )
 
-    # amin_idx = np.unravel_index(np.nanargmin(cost), cost.shape)
-    # amin_e = float(grid_e[amin_idx])
-    # amin_n = float(grid_n[amin_idx])
-
     for se, sn in zip(sensor_e, sensor_n):
         ax_cost.plot(se, sn, "kv", ms=7, zorder=5)
-    ax_cost.plot(qe, qn, "r*", ms=10, zorder=6)
-    # ax_cost.plot(amin_e, amin_n, "c+", ms=10, mew=1.5, zorder=7)
+    ax_cost.plot(qe, qn, "r*", ms=12, zorder=6, markeredgecolor="k")
 
     legend_handles = [
         Line2D([0], [0], marker="v", color="k", label="Sensors", ls="none", ms=5),
-        Line2D([0], [0], marker="*", color="red", label="Source", ls="none", ms=7),
+        Line2D(
+            [0],
+            [0],
+            marker="*",
+            color="red",
+            label="Source",
+            ls="none",
+            ms=7,
+            markeredgecolor="k",
+        ),
         *[
             Line2D([0], [0], color=c, label=l, linewidth=1.5)
             for c, l in zip(_LOP_COLORS, _LOP_LABELS)
         ],
-        # Line2D(
-        #     [0],
-        #     [0],
-        #     marker="+",
-        #     color="cyan",
-        #     label="MSE argmin",
-        #     ls="none",
-        #     ms=10,
-        #     mew=1.5,
-        # ),
     ]
     ax_cost.legend(
         handles=legend_handles, fontsize=6, loc="lower right", framealpha=1.0
