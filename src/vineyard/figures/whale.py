@@ -8,9 +8,9 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.basemap import Basemap
 from polars import DataFrame
@@ -23,16 +23,15 @@ from vineyard.figures.maps import (
     _plot_study_area,
 )
 
-BBOX_OUTER = [[-70.55, -69.949], [40.6, 41.201]]
+BBOX_OUTER = [[-70.57, -70.09], [40.75, 41.201]]
 INNER_BBOX = [[-74.0, -69.0], [38.5, 43.5]]
-RLIM = (0, 50)
+RLIM = (0, 40)
 BEARING_COLORBAR_CMAP = cmo.cm.thermal
 
 
-def _add_bearing_colorbar(fig: Figure, times: Sequence[np.datetime64]) -> None:
+def _add_bearing_colorbar(fig: Figure, times: np.ndarray) -> None:
     """Add a colorbar showing the time mapping for bearing lines."""
     norm = Normalize(vmin=times.min(), vmax=times.max())
-    # sm = ScalarMappable(cmap=plt.cm.jet, norm=norm)
     sm = ScalarMappable(cmap=BEARING_COLORBAR_CMAP, norm=norm)
     sm.set_array([])
     cax = fig.add_axes([0.25, 0.06, 0.5, 0.03])
@@ -53,6 +52,7 @@ def plot_whale_tracking(
     turbine_data: Path,
     active_turbine_name: str,
     whale_bearings: Path,
+    whale_ranges: Path,
     time_ranges: Sequence[tuple[np.datetime64, np.datetime64]],
 ) -> Figure:
     """Create a two-panel map figure from data files.
@@ -76,20 +76,28 @@ def plot_whale_tracking(
         equip_locations,
         turbine_locations,
         whale_df,
-    ) = _load_map_data(bathy_data, sensor_data, turbine_data, whale_bearings)
+        range_df,
+    ) = _load_map_data(
+        bathy_data, sensor_data, turbine_data, whale_bearings, whale_ranges
+    )
     active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
-    bearings, times, ranges = _process_whale_bearings(whale_df)
+    # bearings, times, ranges = _process_whale_bearings(whale_df, range_df)
+    bearings = range_df["mean_bearing"].to_numpy()
+    times = np.array(
+        [np.datetime64(t, "us").astype("int64") for t in range_df["timestamp"]]
+    )
+    ranges = range_df["whale_range_km"].to_numpy()
 
-    fig = plt.figure(figsize=(9, 4.5))
+    fig = plt.figure(figsize=(8, 4))
     subfigs = fig.subfigures(nrows=1, ncols=2, wspace=-0.2, width_ratios=[0.6, 0.4])
-    plot_whale_data(whale_df, time_ranges, subfig=subfigs[0])
+    plot_whale_data(whale_df, range_df, time_ranges, subfig=subfigs[0])
 
     create_map(
         bathy,
         lonvec,
         latvec,
         equip_locations,
-        whale_df,
+        range_df,
         active_turbine,
         BBOX_OUTER,
         bearings,
@@ -110,7 +118,7 @@ def create_map(
     active_turbine: dict,
     bbox_outer: list[list[float, float]],
     bearings: Sequence[float],
-    times: Sequence[np.datetime64],
+    times: np.ndarray,
     subfig: plt.Figure | None = None,
     ranges: Sequence[float] | None = None,
 ) -> Figure:
@@ -150,27 +158,88 @@ def create_map(
         shallowest_contour_depth=-1.0,
         levelsc=np.arange(-100, 1, 5),
         show_legend=True,
-        legend_bbox=(0.765, 0.15),
+        legend_bbox=(0.5, 0.934),
         legend_ncol=1,
-        bearing_arc_range=(140, 220),
-        arc_range_km=[np.min(ranges), np.median(ranges)],
-        arc_colors=["tab:blue", "tab:red"],
         parallel_labels=[0, 1, 0, 0],
     )
 
     # Plot estimated whale positions
-    _plot_whale_positions(ax, m, equip_locations, whale_data)
+    # _plot_whale_positions(ax, m, equip_locations, whale_data)
+    _plot_whale_position_brackets(ax, m, equip_locations, whale_data)
 
     # Add New England context inset
     _create_context_inset(ax, bbox_outer, bounds=INNER_BBOX)
 
     # Add panel label
-    add_panel_label(ax, "e")
+    add_panel_label(ax, "d")
 
     # Add colorbar for bearing times
     _add_bearing_colorbar(subfig, times)
 
     return fig
+
+
+def _plot_whale_position_brackets(
+    ax: Axes,
+    m: Basemap,
+    equip_locations: DataFrame,
+    whale_data: DataFrame,
+    range_min_km: float = 5.0,
+    cap_km: float = 0.75,
+) -> None:
+    """Plot whale position uncertainty as radial brackets along DOA from VLA1.
+
+    Each bracket spans from min to max range along the bearing direction,
+    with perpendicular caps at each end, colored by time.
+    """
+    x_center, y_center = m(
+        equip_locations.filter(pl.col("mooring_name") == "VLA1")["longitude"],
+        equip_locations.filter(pl.col("mooring_name") == "VLA1")["latitude"],
+    )
+    valid = whale_data.filter(pl.col("whale_range_km") < RLIM[1]).sort("timestamp")
+    bearings_rad = np.deg2rad(valid["mean_bearing"].to_numpy())
+    range_min_m = range_min_km * 1000
+    ranges_max_m = valid["whale_range_km"].to_numpy() * 1000
+    cap_m = cap_km * 1000
+
+    times = np.array(
+        [np.datetime64(i, "us").astype("int64") for i in valid["timestamp"]]
+    )
+    norm = Normalize(vmin=times.min(), vmax=times.max())
+    colors = BEARING_COLORBAR_CMAP(norm(times))
+
+    # Radial unit vector (bearing: sin=E, cos=N in map coords)
+    radial_x = np.sin(bearings_rad)
+    radial_y = np.cos(bearings_rad)
+    # Perpendicular unit vector (90° CCW from radial)
+    perp_x = np.cos(bearings_rad)
+    perp_y = -np.sin(bearings_rad)
+
+    x0, y0 = x_center[0], y_center[0]
+    for i, color in enumerate(colors):
+        x_near = x0 + range_min_m * radial_x[i]
+        y_near = y0 + range_min_m * radial_y[i]
+        x_far = x0 + ranges_max_m[i] * radial_x[i]
+        y_far = y0 + ranges_max_m[i] * radial_y[i]
+
+        # Radial shaft
+        ax.plot([x_near, x_far], [y_near, y_far], color=color, linewidth=1.5, zorder=15)
+        # Near cap
+        ax.plot(
+            [x_near - cap_m * perp_x[i], x_near + cap_m * perp_x[i]],
+            [y_near - cap_m * perp_y[i], y_near + cap_m * perp_y[i]],
+            color=color,
+            linewidth=1.5,
+            zorder=15,
+        )
+        # Far cap
+        ax.plot(
+            [x_far - cap_m * perp_x[i], x_far + cap_m * perp_x[i]],
+            [y_far - cap_m * perp_y[i], y_far + cap_m * perp_y[i]],
+            color=color,
+            linewidth=1.5,
+            zorder=15,
+        )
 
 
 def _plot_bearing_lines(
@@ -200,71 +269,9 @@ def _plot_bearing_lines(
         )
 
 
-def _plot_whale_positions(
-    ax: Axes,
-    m: Basemap,
-    equip_locations: DataFrame,
-    whale_data: DataFrame,
-) -> None:
-    """Plot estimated whale positions from VLA1 using vla1_brg (angle) and whale_range_km (radius), colored by time."""
-    x_center, y_center = m(
-        equip_locations.filter(pl.col("mooring_name") == "VLA1")["longitude"],
-        equip_locations.filter(pl.col("mooring_name") == "VLA1")["latitude"],
-    )
-    valid = whale_data.filter(pl.col("whale_range_km") < RLIM[1]).sort("timestamp")
-    bearings_rad = np.deg2rad(valid["vla1_brg"].to_numpy())
-    ranges_m = valid["whale_range_km"].to_numpy() * 1000
-    x_whale = x_center[0] + ranges_m * np.sin(bearings_rad)
-    y_whale = y_center[0] + ranges_m * np.cos(bearings_rad)
-    times = np.array(
-        [np.datetime64(i, "us").astype("int64") for i in valid["timestamp"]]
-    )
-    norm = Normalize(vmin=times.min(), vmax=times.max())
-    ax.scatter(
-        x_whale,
-        y_whale,
-        c=BEARING_COLORBAR_CMAP(norm(times)),
-        s=15,
-        zorder=15,
-        edgecolors="none",
-    )
-
-
-def _process_whale_bearings(
-    whale_df: DataFrame,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Process whale bearings by correcting ambiguities and filtering.
-
-    Returns:
-        Tuple of (bearings, times) as numpy arrays
-    """
-    # Correct bearing ambiguities
-    unamb_bearings = whale_df.filter(pl.col("vla1_brg") > 90)
-    amb_bearings = whale_df.filter(pl.col("vla1_brg") < 90)
-    amb_bearings = amb_bearings.with_columns(
-        pl.col("vla1_brg").add(2 * (90 - pl.col("vla1_brg")))
-    )
-
-    # Concatenate, filter, and sort
-    corr_whale_df = (
-        pl.concat([unamb_bearings, amb_bearings])
-        .filter(pl.col("vla1_brg") < 205, pl.col("vla1_brg") > 155)
-        .sort("timestamp")
-    )
-
-    bearings = corr_whale_df["vla1_brg"].to_numpy()
-    times = np.array(
-        [np.datetime64(i, "us").astype("int64") for i in corr_whale_df["timestamp"]]
-    )
-
-    ranges = (
-        whale_df["whale_range_km"].filter(whale_df["whale_range_km"] < 500).to_numpy()
-    )
-    return bearings, times, ranges
-
-
 def plot_whale_data(
-    df: pl.DataFrame,
+    whale_df: pl.DataFrame,
+    range_df: pl.DataFrame,
     time_ranges: Sequence[tuple[np.datetime64, np.datetime64]],
     subfig: plt.Figure | None = None,
 ) -> Figure:
@@ -274,22 +281,31 @@ def plot_whale_data(
     host = subfig if subfig is not None else plt.figure(figsize=(10, 6))
     fig = subfig.figure if subfig is not None else host
 
-    gs = host.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.25)
-    gs_upper = gs[0].subgridspec(3, 1, hspace=0.05)
-    axes = [host.add_subplot(gs_upper[i]) for i in range(3)]
-    ax4 = host.add_subplot(gs[1])
+    axes = host.subplots(
+        nrows=3,
+        ncols=1,
+        sharex=True,
+        gridspec_kw={"height_ratios": [1, 1, 1], "hspace": 0.12},
+    )
 
     for ax in axes[1:]:
         ax.sharex(axes[0])
 
     ax = axes[0]
     ax.scatter(
-        df["timestamp"],
-        df["vla1_brg"],
+        whale_df["timestamp"],
+        whale_df["vla1_brg"],
         color="k",
         s=10,
         zorder=10,
     )
+    for row in range_df.iter_rows(named=True):
+        ax.plot(
+            [np.datetime64(row["start_time"]), np.datetime64(row["stop_time"])],
+            [row["y0"], row["y1"]],
+            color="red",
+            zorder=15,
+        )
     [
         ax.axvspan(
             start,
@@ -304,13 +320,14 @@ def plot_whale_data(
     ax.set_ylim(160, 200)
     ax.grid()
     ax.tick_params(labelbottom=False)
-    ax.set_ylabel("Fin whale DOA\n(°)")
+    ax.set_ylabel("Fin whale DOA (°)")
+    ax.legend(["Estimates", "Segmented linear fits"], loc="upper right", framealpha=1.0)
     add_panel_label(ax, "a")
 
     ax = axes[1]
     ax.scatter(
-        df["timestamp"],
-        df["angular_velocity_smoothed"],
+        range_df["timestamp"],
+        range_df["slope_deg_s"],
         color="k",
         s=10,
         zorder=10,
@@ -330,13 +347,12 @@ def plot_whale_data(
 
     ax.grid()
     ax.tick_params(labelbottom=False)
-    ax.set_ylabel("Angular velocity\n(°/s)")
+    ax.set_ylabel("Angular velocity (°/s)")
 
     ax = axes[2]
-    data = df["whale_range_km"].filter(df["whale_range_km"] < RLIM[-1]).to_numpy()
     ax.scatter(
-        df["timestamp"],
-        df["whale_range_km"],
+        range_df["timestamp"],
+        range_df["whale_range_km"],
         color="k",
         s=10,
         zorder=15,
@@ -352,66 +368,14 @@ def plot_whale_data(
         )
         for start, end in time_ranges
     ]
-    ax.axhline(
-        np.min(data),
-        color="tab:blue",
-        linestyle="--",
-        linewidth=3,
-        label=f"Minimum: {np.min(data):.1f} km",
-        zorder=10,
-    )
-    ax.axhline(
-        np.median(data),
-        color="tab:red",
-        linestyle="--",
-        linewidth=3,
-        label=f"Median: {np.median(data):.1f} km",
-        zorder=10,
-    )
     ax.set_ylim(RLIM)
     ax.grid()
     ax.set_xlabel("Time (UTC)")
-    ax.set_ylabel("Max. range\n(km)")
+    ax.set_ylabel("Max. range (km)")
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
     add_panel_label(ax, "c")
 
-    ax4 = _plot_range_est_distribution(df, ax4)
-    add_panel_label(ax4, "d")
-
-    host.align_ylabels([*axes, ax4])
+    host.align_ylabels(axes)
 
     return fig
-
-
-def _plot_range_est_distribution(df: pl.DataFrame, ax: Axes) -> Axes:
-    """Plot distribution of whale range estimates."""
-    data = df["whale_range_km"].filter(df["whale_range_km"] < RLIM[-1]).to_numpy()
-    ax.hist(
-        data,
-        bins=50,
-        color="grey",
-        zorder=10,
-        label=None,
-    )
-    ax.axvline(
-        np.min(data),
-        color="tab:blue",
-        linestyle="--",
-        linewidth=3,
-        label=f"Minimum: {np.min(data):.1f} km",
-        zorder=15,
-    )
-    ax.axvline(
-        np.median(data),
-        color="tab:red",
-        linestyle="--",
-        linewidth=3,
-        label=f"Median: {np.median(data):.1f} km",
-        zorder=15,
-    )
-    ax.legend(loc="upper right")
-    ax.set_xlabel("Maximum range (km)")
-    ax.set_ylabel("Count")
-    ax.grid()
-    return ax

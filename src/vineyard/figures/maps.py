@@ -246,10 +246,12 @@ def _load_map_data(
     sensor_data: Path,
     turbine_data: Path,
     whale_bearings: Path | None = None,
+    whale_ranges: Path | None = None,
 ) -> tuple[
     tuple[dict, Sequence[float], Sequence[float]],
     DataFrame,
     DataFrame,
+    DataFrame | None,
     DataFrame | None,
 ]:
     """Load all data files needed for map creation.
@@ -267,8 +269,18 @@ def _load_map_data(
         if whale_bearings
         else None
     )
-
-    return (bathy, lonvec, latvec), equip_locations, turbine_locations, whale_df
+    range_df = (
+        pl.read_csv(whale_ranges).cast({"timestamp": pl.Datetime})
+        if whale_ranges
+        else None
+    )
+    return (
+        (bathy, lonvec, latvec),
+        equip_locations,
+        turbine_locations,
+        whale_df,
+        range_df,
+    )
 
 
 def _plot_bathy(

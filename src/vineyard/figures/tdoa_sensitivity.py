@@ -1,65 +1,18 @@
-"""TDOA localization sensitivity figure.
+"""TDOA localization cost-function figure.
 
-Two-panel figure showing:
-    (a) Geometric dilution of precision (GDOP) over the search domain.
-    (b) MSE cost function with hyperbolic lines of position for a query source.
+Single-panel figure showing the MSE cost function with hyperbolic lines of
+position for a query source.
 """
 
 from pathlib import Path
 
-import cmocean.cm as cmo
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import ticker
-from matplotlib.colors import LogNorm
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from vineyard.figures.common import add_panel_label
 from vineyard.readers import read_sensor_positions
-
-
-def _gdop_grid(
-    e0: float,
-    n0: float,
-    e1: float,
-    n1: float,
-    e2: float,
-    n2: float,
-    grid_e: np.ndarray,
-    grid_n: np.ndarray,
-) -> np.ndarray:
-    """Compute GDOP over a 2D grid given three sensor positions (all in km).
-
-    Returns:
-        2D array of GDOP values (NaN where geometry is singular or at sensor
-        locations).
-    """
-    with np.errstate(divide="ignore", invalid="ignore"):
-        r0 = np.sqrt((grid_e - e0) ** 2 + (grid_n - n0) ** 2)
-        r1 = np.sqrt((grid_e - e1) ** 2 + (grid_n - n1) ** 2)
-        r2 = np.sqrt((grid_e - e2) ** 2 + (grid_n - n2) ** 2)
-
-        # Jacobian rows: partial derivatives of each hyperbolic range-difference
-        # equation with respect to source (x, y).  Matches tdoa.jacobian().
-        adx = (grid_e - e1) / r1 - (grid_e - e0) / r0
-        ady = (grid_n - n1) / r1 - (grid_n - n0) / r0
-        bdx = (grid_e - e2) / r2 - (grid_e - e0) / r0
-        bdy = (grid_n - n2) / r2 - (grid_n - n0) / r0
-        cdx = (grid_e - e2) / r2 - (grid_e - e1) / r1
-        cdy = (grid_n - n2) / r2 - (grid_n - n1) / r1
-
-        # Symmetric 2×2 J^T J
-        m00 = adx**2 + bdx**2 + cdx**2
-        m11 = ady**2 + bdy**2 + cdy**2
-        m01 = adx * ady + bdx * bdy + cdx * cdy
-
-        det = m00 * m11 - m01**2
-        gdop = np.sqrt((m00 + m11) / det)
-
-    gdop[det <= 0] = np.nan
-    return gdop
 
 
 def _cost_grid(
@@ -99,20 +52,15 @@ def plot_tdoa_sensitivity(
     grid_extent_km: tuple[float, float, float, float] | None = None,
     grid_resolution: int = 300,
     query_point_km: tuple[float, float] | None = None,
-    figsize: tuple[float, float] = (8.0, 4.0),
+    figsize: tuple[float, float] = (4.5, 4.5),
 ) -> Figure:
-    """Plot TDOA localization sensitivity for the sensor array geometry.
+    """Plot the TDOA cost-function landscape for a query source.
 
-    Panel (a) — GDOP heatmap: shows where the sensor geometry gives precise
-    (low GDOP) or imprecise (high GDOP) localization.  For a nearly E–W linear
-    array the GDOP will be high directly north and south of the array because
-    all sensor pairs share nearly the same bearing to those sources.
-
-    Panel (b) — Cost function landscape: log₁₀ MSE of the TDOA hyperbolic
-    residuals for a query source, with hyperbolic lines of position (LOPs)
-    overlaid.  Each LOP is the locus of equal range difference between one
-    sensor pair; all three LOPs intersect at the true source.  A narrow,
-    well-isolated intersection indicates good localization.
+    Shows the log₁₀ MSE of the TDOA hyperbolic residuals for a query source,
+    with hyperbolic lines of position (LOPs) overlaid.  Each LOP is the locus
+    of equal range difference between one sensor pair; all three LOPs intersect
+    at the true source.  A narrow, well-isolated intersection indicates good
+    localization.
 
     Args:
         sensor_data: Path to sensor positions CSV (see read_sensor_positions).
@@ -152,54 +100,14 @@ def plot_tdoa_sensitivity(
     else:
         qe, qn = float(query_point_km[0]), float(query_point_km[1])
 
-    # ---- Sensitivity fields ----
-    gdop = _gdop_grid(e0, n0, e1, n1, e2, n2, grid_e, grid_n)
+    # ---- Cost field ----
     cost = _cost_grid(e0, n0, e1, n1, e2, n2, qe, qn, grid_e, grid_n)
 
     # ---- Figure ----
-    fig, (ax_gdop, ax_cost) = plt.subplots(1, 2, figsize=figsize)
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
 
-    _SENSOR_NAMES = ["3DVHA", "VLA1", "VLA2"]
-
-    # ---- Panel (a): GDOP ----
-    _gdop_vmax = 10000
-    im_g = ax_gdop.pcolormesh(
-        grid_e,
-        grid_n,
-        gdop,
-        cmap=cmo.thermal,
-        norm=LogNorm(vmax=_gdop_vmax),
-        shading="auto",
-        rasterized=True,
-    )
-    CS = ax_gdop.contour(
-        grid_e,
-        grid_n,
-        gdop,
-        levels=10 ** np.arange(0, np.log10(_gdop_vmax) + 1),
-        colors="k",
-        linewidths=0.5,
-        alpha=1.0,
-    )
-    fmt = ticker.LogFormatterMathtext()
-    fmt.create_dummy_axis()
-    ax_gdop.clabel(CS, inline=1, fontsize=6, fmt=fmt)
-    _div_g = make_axes_locatable(ax_gdop)
-    _cax_g = _div_g.append_axes("right", size="4%", pad=0.05)
-    cb_g = fig.colorbar(im_g, cax=_cax_g, extend="max")
-    cb_g.set_label("DOP (km/km)")
-
-    for se, sn in zip(sensor_e, sensor_n):
-        ax_gdop.plot(se, sn, "kv", ms=7, zorder=5)
-
-    ax_gdop.set_xlabel("Easting (km)")
-    ax_gdop.set_ylabel("Northing (km)")
-    ax_gdop.set_aspect("equal")
-    add_panel_label(ax_gdop, "a")
-
-    # ---- Panel (b): Cost function + hyperbolic LOPs ----
     log_cost = np.log10(cost + 1e-10)
-    im_c = ax_cost.pcolormesh(
+    im = ax.pcolormesh(
         grid_e,
         grid_n,
         log_cost,
@@ -209,10 +117,10 @@ def plot_tdoa_sensitivity(
         shading="auto",
         rasterized=True,
     )
-    _div_c = make_axes_locatable(ax_cost)
-    _cax_c = _div_c.append_axes("right", size="4%", pad=0.05)
-    cb_c = fig.colorbar(im_c, cax=_cax_c, extend="both")
-    cb_c.set_label(r"$\mathdefault{log}_{10}(\mathdefault{MSE})$ (km²)")
+    div = make_axes_locatable(ax)
+    cax = div.append_axes("right", size="4%", pad=0.05)
+    cb = fig.colorbar(im, cax=cax, extend="both")
+    cb.set_label(r"$\mathdefault{log}_{10}(\mathdefault{MSE})$ (km²)")
 
     # Range differences over the grid and at the query source
     r0_g = np.sqrt((grid_e - e0) ** 2 + (grid_n - n0) ** 2)
@@ -233,7 +141,7 @@ def plot_tdoa_sensitivity(
         [qr1 - qr0, qr2 - qr0, qr2 - qr1],
         _LOP_COLORS,
     ):
-        ax_cost.contour(
+        ax.contour(
             grid_e,
             grid_n,
             diff_grid,
@@ -243,8 +151,8 @@ def plot_tdoa_sensitivity(
         )
 
     for se, sn in zip(sensor_e, sensor_n):
-        ax_cost.plot(se, sn, "kv", ms=7, zorder=5)
-    ax_cost.plot(qe, qn, "r*", ms=12, zorder=6, markeredgecolor="k")
+        ax.plot(se, sn, "kv", ms=7, zorder=5)
+    ax.plot(qe, qn, "r*", ms=12, zorder=6, markeredgecolor="k")
 
     legend_handles = [
         Line2D([0], [0], marker="v", color="k", label="Sensors", ls="none", ms=5),
@@ -263,14 +171,11 @@ def plot_tdoa_sensitivity(
             for c, l in zip(_LOP_COLORS, _LOP_LABELS)
         ],
     ]
-    ax_cost.legend(
-        handles=legend_handles, fontsize=6, loc="lower right", framealpha=1.0
-    )
+    ax.legend(handles=legend_handles, fontsize=6, loc="lower right", framealpha=1.0)
 
-    ax_cost.set_xlabel("Easting (km)")
-    ax_cost.set_ylabel("Northing (km)")
-    ax_cost.set_aspect("equal")
-    add_panel_label(ax_cost, "b")
+    ax.set_xlabel("Easting (km)")
+    ax.set_ylabel("Northing (km)")
+    ax.set_aspect("equal")
 
     fig.tight_layout()
     return fig

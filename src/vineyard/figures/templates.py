@@ -104,11 +104,11 @@ def plot_strike_template(
     fig, axes = plt.subplots(
         nrows=4,
         ncols=n_panels,
-        figsize=(4 * n_panels, 6),
+        figsize=(3 * n_panels, 4.5),
         gridspec_kw={
             "height_ratios": [1, 0.25, 0.25, 0.25],
             "hspace": 0.0,
-            "wspace": 0.1,
+            "wspace": 0.05,
         },
     )
 
@@ -192,7 +192,7 @@ def plot_strike_template(
 
         # Create the plot in the current column
         title = (
-            f"Strike {strike_idx}, "
+            f"Strike $i = {strike_idx}$, "
             f"{strike_index.item(strike_idx, 'start_time').strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
 
@@ -282,8 +282,12 @@ def plot_template(
                 label="Reference",
                 linewidth=1.2,
             )
-            ytick_labels.append(f"Reference {i}")
+            ytick_labels.append(f"Reference $p_i$")
         else:
+            if i < reference_ind:
+                label = f"$p_{{i - {np.abs(i - reference_ind)}}}$"
+            elif i > reference_ind:
+                label = f"$p_{{i + {np.abs(i - reference_ind)}}}$"
             ax.plot(
                 time,
                 traces[i] - offset_idx * offset_spacing,
@@ -291,7 +295,7 @@ def plot_template(
                 linewidth=0.7,
                 alpha=0.7,
             )
-            ytick_labels.append(f"{i}")
+            ytick_labels.append(label)
         ytick_positions.append(-offset_idx * offset_spacing)
         offset_idx += 1
 
@@ -304,7 +308,7 @@ def plot_template(
         linewidth=1,
     )
     ytick_positions.append(-offset_idx * offset_spacing)
-    ytick_labels.append("Template")
+    ytick_labels.append("Template $x_i$")
 
     ax.set_xticks([])
     ax.set_xticklabels([])
@@ -315,13 +319,6 @@ def plot_template(
         ax.set_yticklabels(ytick_labels)
     else:
         ax.set_yticklabels([])
-    if show_legend:
-        ax.legend(
-            loc="upper left",
-            bbox_to_anchor=(0.05, 1.01),
-            framealpha=1.0,
-            borderpad=0.2,
-        )
 
     ax = axes[1]
     # Plot reference first
@@ -330,15 +327,14 @@ def plot_template(
             time,
             traces[reference_ind],
             "tab:blue",
-            label="Reference",
+            label="$p_i$",
             linewidth=1.0,
             zorder=2,
         )
-    # ax.plot(time, template, "r", label="Template", zorder=20)
     others_labeled = False
     for i in range(n_traces):
         if i != reference_ind:
-            label = "Others" if not others_labeled else None
+            label = "$p_{i + j, j\\neq 0}$" if not others_labeled else None
             ax.plot(
                 time, traces[i], "k", label=label, linewidth=0.8, alpha=0.7, zorder=1
             )
@@ -352,21 +348,16 @@ def plot_template(
     if show_legend:
         ax.legend(
             loc="upper left",
-            bbox_to_anchor=(-0.01, 1.05),
+            bbox_to_anchor=(-0.01, 1.06),
             framealpha=1.0,
-            borderpad=0.2,
+            borderpad=0.1,
+            labelspacing=0.0,
+            ncol=1,
         )
 
     ax = axes[2]
-    ax.plot(
-        time,
-        traces[reference_ind],
-        "tab:blue",
-        label="Reference",
-        linewidth=0.8,
-        zorder=1,
-    )
-    ax.plot(time, template, "tab:red", label="Template", zorder=2)
+    ax.plot(time, traces[reference_ind], "tab:blue", label="$p_i$", zorder=1)
+    ax.plot(time, template, "tab:red", label="$x_i$", zorder=2)
     ax.set_xticks([])
     ax.set_xticklabels([])
     ax.set_xlim(xlim)
@@ -376,38 +367,43 @@ def plot_template(
     if show_legend:
         ax.legend(
             loc="upper left",
-            bbox_to_anchor=(-0.01, 1.05),
+            bbox_to_anchor=(-0.01, 1.06),
             framealpha=1.0,
-            borderpad=0.2,
+            borderpad=0.1,
+            labelspacing=0.0,
+            ncol=1,
         )
 
     ax = axes[3]
     diff = template - traces[reference_ind]
-    ax.plot(time, diff, "tab:green", label="Residual")
+    ax.plot(time, diff, "tab:green", label="$p_i - x_i$")
     ax.set_xlim(xlim)
     if ylim is not None:
         ax.set_ylim(ylim)
     if show_legend:
         ax.legend(
             loc="upper left",
-            bbox_to_anchor=(-0.01, 1.05),
+            bbox_to_anchor=(-0.01, 1.06),
             framealpha=1.0,
             borderpad=0.2,
+            labelspacing=0.0,
         )
     ax.set_xlabel("Time (s)")
     if show_ylabel:
         ax.set_ylabel("Amplitude (μPa)")
-    ax.yaxis.set_major_formatter(
-        FuncFormatter(partial(format_tick_scientific, mathtext=False))
-    )
-    ax.yaxis.get_offset_text().set_visible(False)
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(partial(format_tick_scientific, mathtext=False))
+        )
+        ax.yaxis.get_offset_text().set_visible(False)
+    else:
+        ax.set_yticklabels([])
 
     if title is not None:
         if return_fig:
             fig.suptitle(title, y=0.91)
         else:
             # For subplots, use column title
-            axes[0].set_title(title, fontsize=10)
+            axes[0].set_title(title, fontsize=8)
 
     if return_fig:
         return fig

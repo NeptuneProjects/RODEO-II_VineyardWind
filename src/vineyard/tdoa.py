@@ -1,19 +1,29 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import piecewise_regression
 import polars as pl
 import pymap3d as pm
 from numpy.typing import ArrayLike, NDArray
 from pydantic import BaseModel
 from scipy.optimize import leastsq
-
 from vineyard.readers import (
     read_distances,
     read_sensor_positions,
     read_whale_call_times,
 )
+
+
+class SmoothingRegionConfig(BaseModel):
+    """A time region over which to fit a piecewise linear bearing model."""
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    n_breakpoints: int = 6
+    breakpoints: list[float] | None = None
 
 
 class LocalizationConfig(BaseModel):
@@ -24,12 +34,15 @@ class LocalizationConfig(BaseModel):
     sensor_data: Path = "data/sensors.csv"
     tdoa_file: Path = "data/acoustic/tdoa/tdoa.csv"
     localization_file: Path = "data/acoustic/tdoa/localization.csv"
+    raw_localization_file: Path = "data/acoustic/tdoa/localization_raw.csv"
+    range_file: Path = "data/acoustic/tdoa/range_estimates.csv"
     reference_site: str = "vla1"
     ambiguity_lower_bound: float = 90.0
     ambiguity_upper_bound: float = 270.0
     dwdt_threshold: float = 0.25  # degrees per second
     smoothing_window: int = 10
     speed_upper_bound: float = 35.0  # km/h
+    smoothing_regions: list[SmoothingRegionConfig] = []
 
 
 @dataclass
@@ -596,7 +609,7 @@ def estimate_range(df: pl.DataFrame, tangential_speed: float = 35.0) -> pl.DataF
         DataFrame with new column 'whale_range_km' containing estimated range in kilometers.
     """
     ranges = compute_whale_range(
-        np.abs(df["angular_velocity_smoothed"].to_numpy()),
+        np.abs(df["slope_deg_s"].to_numpy()),
         tangential_speed=tangential_speed,
     )
     return df.with_columns(
@@ -694,6 +707,110 @@ def functions(x0, y0, x1, y1, x2, y2, d01, d02, d12):
     return fn
 
 
+def _estimate_velocity_and_range_in_region(
+    df: pl.DataFrame, estimation_params: SmoothingRegionConfig
+) -> pl.DataFrame:
+    start_time = estimation_params.start_time
+    end_time = estimation_params.end_time
+    n_breakpoints = estimation_params.n_breakpoints
+    breakpoints = estimation_params.breakpoints
+
+    df = df.filter(
+        (pl.col("timestamp") >= start_time) & (pl.col("timestamp") < end_time)
+    ).with_columns(
+        pl.col("unix_time_us")
+        .sub(pl.col("unix_time_us").min())
+        .mul(1e-6)
+        .cast(pl.Float64)
+        .alias("time_s")
+    )
+
+    pw_fit = piecewise_regression.Fit(
+        df["time_s"].to_numpy(),
+        df["vla1_brg"].to_numpy(),
+        n_breakpoints=n_breakpoints,
+        start_values=breakpoints,
+    )
+    pw_df = _parse_pwlr_results(pw_fit, df["time_s"].max())
+    return _format_pw_dataframe(pw_df, df), pw_fit
+
+
+def _format_pw_dataframe(df: pl.DataFrame, original_df: pl.DataFrame) -> pl.DataFrame:
+    ref_datetime = original_df["timestamp"].min()
+    ref_us = int(np.datetime64(ref_datetime, "us").view(np.int64))
+
+    df = df.with_columns(
+        (pl.lit(ref_us) + (pl.col("time_s") * 1e6).cast(pl.Int64))
+        .cast(pl.Datetime("us"))
+        .alias("timestamp"),
+        (pl.lit(ref_us) + (pl.col("start_s") * 1e6).cast(pl.Int64))
+        .cast(pl.Datetime("us"))
+        .alias("start_time"),
+        (pl.lit(ref_us) + (pl.col("stop_s") * 1e6).cast(pl.Int64))
+        .cast(pl.Datetime("us"))
+        .alias("stop_time"),
+    )
+    mean_bearing = (
+        df.join_where(
+            original_df.select(
+                pl.col("timestamp").alias("obs_timestamp"),
+                pl.col("vla1_brg"),
+            ),
+            pl.col("start_time") <= pl.col("obs_timestamp"),
+            pl.col("obs_timestamp") < pl.col("stop_time"),
+        )
+        .group_by("time_s")
+        .agg(pl.mean("vla1_brg").alias("mean_bearing"))
+    )
+    return df.join(mean_bearing, on="time_s", how="left")
+
+
+def _parse_pwlr_results(
+    pw_fit: piecewise_regression.Fit, reference_time: float
+) -> pl.DataFrame:
+    params = pw_fit.best_muggeo.best_fit.raw_params
+    alpha_hat = params[1]
+    beta_hats = params[2 : 2 + pw_fit.n_breakpoints]
+    slope = alpha_hat + np.cumsum(np.insert(beta_hats, 0, 0.0))
+
+    breakpoints = pw_fit.best_muggeo.best_fit.next_breakpoints
+    start = np.insert(breakpoints, 0, 0.0)
+    stop = np.append(breakpoints, reference_time)
+    time = np.mean(np.column_stack((start, stop)), axis=1)
+
+    x_pred = np.array([start, stop])
+    y_pred = params[0] + alpha_hat * x_pred
+    for beta, bp in zip(beta_hats, breakpoints):
+        y_pred += beta * np.maximum(x_pred - bp, 0)
+
+    constant = params[0] - np.cumsum(np.insert(beta_hats * breakpoints, 0, 0.0))
+
+    return pl.DataFrame(
+        {
+            "time_s": time,
+            "constant_deg": constant,
+            "slope_deg_s": slope,
+            "start_s": start,
+            "stop_s": stop,
+            "y0": y_pred[0],
+            "y1": y_pred[1],
+        }
+    )
+
+
+def estimate_velocity_and_range(
+    df: pl.DataFrame,
+    estimation_params: list[SmoothingRegionConfig],
+    speed_upper_bound: float,
+) -> pl.DataFrame:
+    dfs = []
+    for param in estimation_params:
+        pwdf, _ = _estimate_velocity_and_range_in_region(df, param)
+        dfs.append(pwdf)
+
+    return estimate_range(pl.concat(dfs), tangential_speed=speed_upper_bound)
+
+
 def localize(config: LocalizationConfig) -> None:
     """Run the full TDOA localization pipeline and save results to CSV.
 
@@ -705,22 +822,24 @@ def localize(config: LocalizationConfig) -> None:
         config.whale_call_data, config.distance_lut, config.reference_site
     )
     df = localize_tdoa_data(df, config.sensor_data)
-    df.write_csv(config.localization_file.with_name("tdoa_localization_raw.csv"))
+    df.write_csv(config.raw_localization_file)
     df = correct_ambiguous_bearings(
         df, config.ambiguity_lower_bound, config.ambiguity_upper_bound
     )
     # Remove outliers < 162 > 210 degrees for vla1_brg
     df = df.filter((pl.col("vla1_brg") >= 162) & (pl.col("vla1_brg") <= 210))
-    df = compute_angular_velocity(
+    df.write_csv(config.localization_file)
+
+    df_vel_range = estimate_velocity_and_range(
         df,
-        config.dwdt_threshold,
-        config.smoothing_window,
-    )
-    df = estimate_range(
-        df,
+        config.smoothing_regions,
         config.speed_upper_bound,
     )
-    df.write_csv(config.localization_file)
+    df_vel_range = estimate_range(
+        df_vel_range,
+        config.speed_upper_bound,
+    )
+    df_vel_range.write_csv(config.range_file)
 
 
 def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:

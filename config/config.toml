@@ -165,13 +165,38 @@ filt_freq = [15.0, 50.0] # Hz
 output_file = "data/acoustic/whale_detections.csv"
 
 [tdoa]
+raw_localization_file = "data/acoustic/tdoa/localization_raw.csv"
 localization_file = "data/acoustic/tdoa/localization.csv"
+range_file = "data/acoustic/tdoa/range_estimates.csv"
 reference_site = "vla1"
-ambiguity_lower_bound = 90.0                              # degrees
-ambiguity_upper_bound = 270.0                             # degrees
-dwdt_threshold = 0.25                                     # degrees per second
-smoothing_window = 10                                     # number of calls
-speed_upper_bound = 10.0                                  # km/h
+ambiguity_lower_bound = 90.0                                      # degrees
+ambiguity_upper_bound = 270.0                                     # degrees
+dwdt_threshold = 0.25                                             # degrees per second
+smoothing_window = 10                                             # number of calls
+speed_upper_bound = 10.0                                          # km/h
+
+[[tdoa.smoothing_regions]]
+start_time = 2023-12-01T21:05:00
+end_time = 2023-12-01T21:10:30
+n_breakpoints = 1
+
+[[tdoa.smoothing_regions]]
+start_time = 2023-12-01T21:12:00
+end_time = 2023-12-01T21:45:00
+n_breakpoints = 6
+breakpoints = [355, 610, 1100, 1185, 1240, 1635]
+
+[[tdoa.smoothing_regions]]
+start_time = 2023-12-01T22:15:00
+end_time = 2023-12-01T22:30:00
+n_breakpoints = 2
+breakpoints = [502, 611]
+
+[[tdoa.smoothing_regions]]
+start_time = 2023-12-01T22:31:00
+end_time = 2023-12-01T22:41:00
+n_breakpoints = 3
+breakpoints = [20, 153, 336]
 
 [plotting]
 savefig_kwargs = { bbox_inches = "tight", dpi = 300, facecolor = "white" }
@@ -180,72 +205,72 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 [plotting.whale_tracking]
 output = "reports/figures/whale_tracking.png"
 
-[plotting.tdoa_sensitivity]
-sensor_data = "data/sensors.csv"
-grid_extent_km = [-20.0, 20.0, -35.0, 5.0]      # [e_min, e_max, n_min, n_max] in km
-grid_resolution = 300
-query_point_km = [-7.5, -12.99]                 # [easting_km, northing_km] relative to VLA1
-output = "reports/figures/tdoa_sensitivity.png"
+# [plotting.tdoa_sensitivity]
+# sensor_data = "data/sensors.csv"
+# grid_extent_km = [-20.0, 20.0, -20.0, 5.0]      # [e_min, e_max, n_min, n_max] in km
+# grid_resolution = 300
+# query_point_km = [-7.5, -12.99]                 # [easting_km, northing_km] relative to VLA1
+# output = "reports/figures/tdoa_sensitivity.png"
 
-[plotting.signal_template]
-col_titles = ["3DVHA", "VLA1", "VLA2"]
+# [plotting.signal_template]
+# col_titles = ["3DVHA", "VLA1", "VLA2"]
 
-whale_sensors = [
-    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-]
-strike_sensors = [
-    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-]
-filt_type = "bandpass"
-filt_freq = [9.0, 110.0]
-nperseg = 16384
-hop = 32
-flim = [10.0, 90.0]
-whale_ylim = [-3e7, 3e7]
-strike_ylim = [-3e8, 3e8]
-figsize = [9, 9]
+# whale_sensors = [
+#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+# ]
+# strike_sensors = [
+#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+# ]
+# filt_type = "bandpass"
+# filt_freq = [9.0, 110.0]
+# nperseg = 16384
+# hop = 32
+# flim = [10.0, 90.0]
+# whale_ylim = [-3e7, 3e7]
+# strike_ylim = [-3e8, 3e8]
+# figsize = [9, 9]
 
-output = "reports/figures/signal_templates.png"
+# output = "reports/figures/signal_templates.png"
 
-[plotting.signal_template.example_signal]
-name = "vla1"
-channel = 0
-time_start = "2023-12-01T21:06:15.00"
-time_end = "2023-12-01T21:08:15"
-start_buffer = 60.0
-end_buffer = 60.0
-datadir = "data/acoustic/denoised"
-ylim = [-7e7, 7e7]
+# [plotting.signal_template.example_signal]
+# name = "vla1"
+# channel = 0
+# time_start = "2023-12-01T21:06:15.00"
+# time_end = "2023-12-01T21:08:15"
+# start_buffer = 60.0
+# end_buffer = 60.0
+# datadir = "data/acoustic/denoised"
+# ylim = [-7e7, 7e7]
 
-[plotting.template_construction]
-sensor_name = "vla1"
-strike_indices = [30, 1900, 2908]
-output_dir = "reports/figures/strike_templates/"
+# [plotting.template_construction]
+# sensor_name = "vla1"
+# strike_indices = [30, 1900, 2908]
+# output_dir = "reports/figures/strike_templates/"
 
-[plotting.denoising]
-sensor = "vla1"
-time_start = "2023-12-01T22:11:00.00"
-time_end = "2023-12-01T22:26:00.00"
-freq_time_start = "2023-12-01T22:24:00"
-freq_time_end = "2023-12-01T22:25:59"
-filt_type = "bandpass"
-filt_freq = [15.0, 50.0]
-window = "hann"
-nperseg = 32768
-hop = 256
-flim = [15.0, 50.0]
-output = "reports/figures/denoised.png"
+# [plotting.denoising]
+# sensor = "vla1"
+# time_start = "2023-12-01T22:11:00.00"
+# time_end = "2023-12-01T22:26:00.00"
+# freq_time_start = "2023-12-01T22:24:00"
+# freq_time_end = "2023-12-01T22:25:59"
+# filt_type = "bandpass"
+# filt_freq = [15.0, 50.0]
+# window = "hann"
+# nperseg = 32768
+# hop = 256
+# flim = [15.0, 50.0]
+# output = "reports/figures/denoised.png"
 
 
-[plotting.experiment]
-image_file = "reports/scirep/windfarm.png"
-output = "reports/figures/experiment_setup.png"
+# [plotting.experiment]
+# image_file = "reports/scirep/windfarm.png"
+# output = "reports/figures/experiment_setup.png"
 
-[plotting.correlation]
-corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
-window = 120.0
-output = "reports/figures/strike_correlation.png"
+# [plotting.correlation]
+# corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
+# window = 120.0
+# output = "reports/figures/strike_correlation.png"

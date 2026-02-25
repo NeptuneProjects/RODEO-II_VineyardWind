@@ -43,6 +43,7 @@ def plot_experiment_setup(
         equip_locations,
         turbine_locations,
         _,
+        _,
     ) = _load_map_data(bathy_data, sensor_data, turbine_data)
     active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
 

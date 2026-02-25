@@ -23,6 +23,7 @@ import logging
 import matplotlib.pyplot as plt
 
 from vineyard.figures.common import (
+    DOPConfig,
     WhaleTrackingConfig,
     PlottingConfig,
     TDOASensitivityConfig,
@@ -31,6 +32,7 @@ from vineyard.figures.common import (
 )
 from vineyard.figures.corr import plot_correlations
 from vineyard.figures.denoise import plot_denoising
+from vineyard.figures.dop import plot_dop
 from vineyard.figures.experiment import plot_experiment_setup
 from vineyard.figures.tdoa_sensitivity import plot_tdoa_sensitivity
 from vineyard.figures.whale import plot_whale_tracking
@@ -39,6 +41,7 @@ from vineyard.figures.templates import plot_strike_template
 
 __all__ = [
     # Common utilities
+    "DOPConfig",
     "PlottingConfig",
     "TDOASensitivityConfig",
     "WhaleTrackingConfig",
@@ -50,6 +53,8 @@ __all__ = [
     "plot_signals",
     # Template construction figures
     "plot_strike_template",
+    # DOP figure
+    "plot_dop",
     # TDOA sensitivity figure
     "plot_tdoa_sensitivity",
     # Orchestration
@@ -95,6 +100,7 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             turbine_data=config.whale_tracking.turbine_data,
             active_turbine_name=config.whale_tracking.active_turbine_name,
             whale_bearings=config.whale_tracking.whale_bearings,
+            whale_ranges=config.whale_tracking.whale_ranges,
             time_ranges=config.whale_tracking.time_ranges,
         )
         save_and_show_figure(
@@ -204,6 +210,23 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             savefig_kwargs=config.savefig_kwargs,
         )
         logging.info(f"Correlation figure saved to {corr.output}")
+
+    if config.dop is not None:
+        logging.info("Creating DOP figure...")
+        dop = config.dop
+        fig = plot_dop(
+            sensor_data=dop.sensor_data,
+            grid_extent_km=dop.grid_extent_km,
+            grid_resolution=dop.grid_resolution,
+            figsize=dop.figsize,
+        )
+        save_and_show_figure(
+            fig,
+            dop.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"DOP figure saved to {dop.output}")
 
     if config.tdoa_sensitivity is not None:
         logging.info("Creating TDOA sensitivity figure...")

@@ -72,6 +72,7 @@ class WhaleTrackingConfig(BaseModel):
     turbine_data: Path | None = None
     active_turbine_name: str | None = None
     whale_bearings: Path | None = None
+    whale_ranges: Path | None = None
     time_ranges: list[list[str]] | None = None
     output: Path = "reports/figures/whale_tracking.png"
 
@@ -155,14 +156,24 @@ class TemplateConstructionConfig(BaseModel):
     filt_freq: float | list[float] | None = None
 
 
+class DOPConfig(BaseModel):
+    """Configuration for the geometric dilution of precision (GDOP) figure."""
+
+    sensor_data: Path = "data/sensors.csv"
+    grid_extent_km: tuple[float, float, float, float] | None = None
+    grid_resolution: int = 300
+    figsize: tuple[float, float] = (4.5, 4.5)
+    output: Path = "reports/figures/dop.png"
+
+
 class TDOASensitivityConfig(BaseModel):
-    """Configuration for the TDOA localization sensitivity figure."""
+    """Configuration for the TDOA localization cost-function figure."""
 
     sensor_data: Path = "data/sensors.csv"
     grid_extent_km: tuple[float, float, float, float] | None = None
     grid_resolution: int = 300
     query_point_km: tuple[float, float] | None = None
-    figsize: tuple[float, float] = (9.0, 4.5)
+    figsize: tuple[float, float] = (4.5, 4.5)
     output: Path = "reports/figures/tdoa/tdoa_sensitivity.png"
 
 
@@ -182,6 +193,7 @@ class PlottingConfig(BaseModel):
     template_construction: TemplateConstructionConfig | None = None
     denoising: DenoiseConfig | None = None
     correlation: CorrelationConfig | None = None
+    dop: DOPConfig | None = None
     tdoa_sensitivity: TDOASensitivityConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None

@@ -91,6 +91,10 @@ class Config(BaseModel):
                 self.plotting_config.whale_tracking.whale_bearings = (
                     self.tdoa_config.localization_file
                 )
+            if self.plotting_config.whale_tracking.whale_ranges is None:
+                self.plotting_config.whale_tracking.whale_ranges = (
+                    self.tdoa_config.range_file
+                )
             if self.plotting_config.whale_tracking.time_ranges is None:
                 self.plotting_config.whale_tracking.time_ranges = (
                     self.process_config.time_ranges
