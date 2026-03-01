@@ -100,7 +100,7 @@ def _create_inner_map_panel(
     bbox_inset: list[list[float, float]],
 ) -> None:
     """Create the inner (detailed) map panel showing turbines and equipment."""
-    ax, _ = _plot_study_area(
+    ax, _ = plot_study_area(
         bathy,
         lonvec,
         latvec,
@@ -130,7 +130,7 @@ def _create_outer_map_panel(
     bearings: Sequence[float],
 ) -> None:
     """Create the outer (regional) map panel with bearing lines and context."""
-    ax, m = _plot_study_area(
+    ax, m = plot_study_area(
         bathy,
         lonvec,
         latvec,
@@ -228,7 +228,7 @@ def create_maps(
     return fig
 
 
-def _get_active_turbine_info(turbine_locations: DataFrame, turbine_name: str) -> dict:
+def get_active_turbine_info(turbine_locations: DataFrame, turbine_name: str) -> dict:
     """Extract active turbine information as a dict for plotting."""
     return {
         "label": f"Turbine {turbine_name}",
@@ -241,7 +241,7 @@ def _get_active_turbine_info(turbine_locations: DataFrame, turbine_name: str) ->
     }
 
 
-def _load_map_data(
+def load_map_data(
     bathy_data: Path,
     sensor_data: Path,
     turbine_data: Path,
@@ -376,7 +376,7 @@ def _plot_bearing_lines(
         )
 
 
-def _plot_study_area(
+def plot_study_area(
     bathy_data: NDArray[np.float64],
     lonvec: NDArray[np.float64],
     latvec: NDArray[np.float64],
@@ -385,7 +385,7 @@ def _plot_study_area(
     active_turbine: dict | None = None,
     bounds: list[list[float]] | None = None,
     ax: Axes | None = None,
-    scale_bar: int = 1,
+    scale_bar: int | None = None,
     shallowest_contour_depth: float = 0.0,
     levelsc=np.arange(-100, 1, 5),
     meridians: float = 0.2,
@@ -399,6 +399,9 @@ def _plot_study_area(
     bearing_arc_range: tuple[float, float] | None = None,
     arc_range_km: Sequence[float] | None = None,
     arc_colors: Sequence[str] | None = None,
+    aspect: float | str = "equal",
+    projected_ticks: bool = False,
+    tick_spacing_km: float | None = None,
 ) -> tuple[Axes, Basemap]:
     if bounds is None:
         llcrnrlat = np.min(latvec)
@@ -425,12 +428,13 @@ def _plot_study_area(
         lon_0=np.mean(lonvec),
         lat_0=np.mean(latvec),
     )
-    m.drawmeridians(
-        np.arange(llcrnrlon, urcrnrlon, meridians), labels=meridian_labels, ax=ax
-    )
-    m.drawparallels(
-        np.arange(llcrnrlat, urcrnrlat, parallels), labels=parallel_labels, ax=ax
-    )
+    if not projected_ticks:
+        m.drawmeridians(
+            np.arange(llcrnrlon, urcrnrlon, meridians), labels=meridian_labels, ax=ax
+        )
+        m.drawparallels(
+            np.arange(llcrnrlat, urcrnrlat, parallels), labels=parallel_labels, ax=ax
+        )
     xlim = m(np.array(bounds[0]), np.ones_like(bounds[0]) * np.mean(bounds[1]))[0]
     ylim = m(np.ones_like(bounds[0]) * np.mean(bounds[0]), np.array(bounds[1]))[1]
 
@@ -505,6 +509,25 @@ def _plot_study_area(
 
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
+    ax.set_aspect(aspect)
+
+    if projected_ticks:
+        x_c = (xlim[0] + xlim[1]) / 2
+        y_c = (ylim[0] + ylim[1]) / 2
+        if tick_spacing_km is None:
+            span_km = max(xlim[1] - xlim[0], ylim[1] - ylim[0]) / 1e3
+            raw = span_km / 5
+            mag = 10 ** np.floor(np.log10(raw))
+            tick_spacing_km = float(np.round(raw / mag) * mag)
+        step = tick_spacing_km * 1e3
+        x_ticks = np.arange(np.ceil(xlim[0] / step) * step, xlim[1], step)
+        y_ticks = np.arange(np.ceil(ylim[0] / step) * step, ylim[1], step)
+        ax.set_xticks(x_ticks)
+        ax.set_yticks(y_ticks)
+        ax.set_xticklabels([f"{(x - x_c) / 1e3:.0f}" for x in x_ticks])
+        ax.set_yticklabels([f"{(y - y_c) / 1e3:.0f}" for y in y_ticks])
+        ax.set_xlabel("Easting (km)")
+        ax.set_ylabel("Northing (km)")
 
     if show_legend:
         leg = ax.legend(
@@ -516,17 +539,18 @@ def _plot_study_area(
         )
         leg.get_frame().set_alpha(None)
 
-    scalebar = AnchoredSizeBar(
-        ax.transData,
-        scale_bar * 1e3,
-        f"{scale_bar:d} km",
-        "lower right",
-        pad=0.1,
-        color="k",
-        frameon=True,
-        size_vertical=20 * scale_bar,
-        zorder=50,
-    )
-    ax.add_artist(scalebar)
+    if scale_bar:
+        scalebar = AnchoredSizeBar(
+            ax.transData,
+            scale_bar * 1e3,
+            f"{scale_bar:d} km",
+            "lower right",
+            pad=0.1,
+            color="k",
+            frameon=True,
+            size_vertical=20 * scale_bar,
+            zorder=50,
+        )
+        ax.add_artist(scalebar)
 
     return ax, m
