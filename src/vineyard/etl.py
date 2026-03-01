@@ -191,6 +191,7 @@ def download_bathy(
         bounds: Bounding box as [[lon_min, lon_max], [lat_min, lat_max]].
         xres: X resolution of the bathymetry data.
         yres: Y resolution of the bathymetry data.
+
     Returns:
         Tuple of numpy arrays containing bathymetry data, longitude vector,
         and latitude vector.

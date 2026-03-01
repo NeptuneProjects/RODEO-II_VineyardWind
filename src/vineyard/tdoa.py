@@ -17,34 +17,6 @@ from vineyard.readers import (
 )
 
 
-class SmoothingRegionConfig(BaseModel):
-    """A time region over which to fit a piecewise linear bearing model."""
-
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    n_breakpoints: int = 6
-    breakpoints: list[float] | None = None
-
-
-class LocalizationConfig(BaseModel):
-    """Configuration for TDOA estimation."""
-
-    whale_call_data: Path = "data/acoustic/whale_detections.csv"
-    distance_lut: Path = "data/distances.csv"
-    sensor_data: Path = "data/sensors.csv"
-    tdoa_file: Path = "data/acoustic/tdoa/tdoa.csv"
-    localization_file: Path = "data/acoustic/tdoa/localization.csv"
-    raw_localization_file: Path = "data/acoustic/tdoa/localization_raw.csv"
-    range_file: Path = "data/acoustic/tdoa/range_estimates.csv"
-    reference_site: str = "vla1"
-    ambiguity_lower_bound: float = 90.0
-    ambiguity_upper_bound: float = 270.0
-    dwdt_threshold: float = 0.25  # degrees per second
-    smoothing_window: int = 10
-    speed_upper_bound: float = 35.0  # km/h
-    smoothing_regions: list[SmoothingRegionConfig] = []
-
-
 @dataclass
 class CorrelatedDetection:
     """A detection event correlated across multiple sites."""
@@ -75,15 +47,44 @@ class CorrelatedDetection:
         )
 
 
+class SmoothingRegionConfig(BaseModel):
+    """A time region over which to fit a piecewise linear bearing model."""
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    n_breakpoints: int = 6
+    breakpoints: list[float] | None = None
+
+
+class LocalizationConfig(BaseModel):
+    """Configuration for TDOA estimation."""
+
+    whale_call_data: Path = "data/acoustic/whale_detections.csv"
+    distance_lut: Path = "data/distances.csv"
+    sensor_data: Path = "data/sensors.csv"
+    tdoa_file: Path = "data/acoustic/tdoa/tdoa.csv"
+    localization_file: Path = "data/acoustic/tdoa/localization.csv"
+    raw_localization_file: Path = "data/acoustic/tdoa/localization_raw.csv"
+    range_file: Path = "data/acoustic/tdoa/range_estimates.csv"
+    reference_site: str = "vla1"
+    ambiguity_lower_bound: float = 90.0
+    ambiguity_upper_bound: float = 270.0
+    dwdt_threshold: float = 0.25  # degrees per second
+    smoothing_window: int = 10
+    speed_upper_bound: float = 35.0  # km/h
+    smoothing_regions: list[SmoothingRegionConfig] = []
+
+
 def compute_angular_velocity(
     df: pl.DataFrame, dwdt_threshold: float, smoothing_window: int
 ) -> pl.DataFrame:
     """Compute angular velocity from bearing changes over time.
 
     Args:
-        df: DataFrame containing bearing columns (e.g., 'vla1_brg') and 'unix_time_us'
-        dwdt_threshold: Threshold for angular velocity in degrees per second
-        smoothing_window: Window size for smoothing angular velocity (number of calls)
+        df: DataFrame containing bearing columns (e.g., 'vla1_brg') and 'unix_time_us'.
+        dwdt_threshold: Threshold for angular velocity in degrees per second.
+        smoothing_window: Window size for smoothing angular velocity (number of calls).
+
     Returns:
         DataFrame with new column 'angular_velocity' representing the rate
         of change of bearing in degrees per second. Values with absolute
@@ -107,26 +108,19 @@ def compute_angular_velocity(
 def compute_bearing(
     reference_easting, reference_northing, target_easting, target_northing
 ):
-    """
-    Calculate the bearing from a reference sensor to a target point.
+    """Calculate the bearing from a reference sensor to a target point.
 
     Bearing is measured clockwise from North (0 degrees), with East at 90 degrees,
     South at 180 degrees, and West at 270 degrees.
 
-    Parameters:
-    -----------
-    reference_easting: float
-        The easting coordinate of the reference sensor
-    reference_northing: float
-        The northing coordinate of the reference sensor
-    target_easting: float
-        The easting coordinate of the target point
-    target_northing: float
-        The northing coordinate of the target point
+    Args:
+        reference_easting: The easting coordinate of the reference sensor.
+        reference_northing: The northing coordinate of the reference sensor.
+        target_easting: The easting coordinate of the target point.
+        target_northing: The northing coordinate of the target point.
 
     Returns:
-    --------
-    float: The bearing in degrees, between 0 and 360
+        The bearing in degrees, between 0 and 360.
     """
     # Calculate the differences in eastings and northings
     delta_e = target_easting - reference_easting
@@ -134,7 +128,7 @@ def compute_bearing(
 
     # Calculate the bearing using arctan2
     # arctan2 returns angle in radians from the positive x-axis
-    # We adjust to get bearing from North, clockwise
+    # Adjust to get bearing from North, clockwise
     bearing = np.degrees(np.arctan2(delta_e, delta_n))
 
     # Normalize to [0, 360) degrees
@@ -164,7 +158,7 @@ def compute_time_gates(
 
 
 def compute_whale_range(
-    angular_speed: ArrayLike | float, tangential_speed: float = 35.0
+    angular_speed: ArrayLike | float, tangential_speed: float = 10.0
 ) -> NDArray | float:
     """Compute the whale range given angular speed and max tangential speed.
 
@@ -185,7 +179,7 @@ def correct_ambiguous_bearings(
     the specified bounds.
 
     Args:
-        df: DataFrame containing bearing columns to correct
+        df: DataFrame containing bearing columns to correct.
         lower_bound: Lower bound of the valid bearing range (e.g., 90 degrees).
         upper_bound: Upper bound of the valid bearing range (e.g., 270 degrees).
 
@@ -238,20 +232,14 @@ def correct_ambiguous_bearings(
 def correlate_all_references(
     times: dict[str, np.ndarray], time_gates: dict[tuple[str, str], float]
 ) -> dict[str, list[CorrelatedDetection]]:
-    """
-    Run correlation using each site as reference and return all results.
+    """Run correlation using each site as reference and return all results.
 
-    Parameters
-    ----------
-    times : dict[str, np.ndarray]
-        Dictionary mapping site names to arrays of detection times
-    time_gates : dict[tuple[str, str], float]
-        Dictionary mapping site pairs to maximum time delays in seconds
+    Args:
+        times: Dictionary mapping site names to arrays of detection times.
+        time_gates: Dictionary mapping site pairs to maximum time delays in seconds.
 
-    Returns
-    -------
-    dict[str, list[CorrelatedDetection]]
-        Dictionary mapping reference site names to their correlation results
+    Returns:
+        Dictionary mapping reference site names to their correlation results.
     """
     results = {}
 
@@ -280,26 +268,19 @@ def correlate_detections_triplet(
     time_gates: dict[tuple[str, str], float],
     reference_site: str = "vla1",
 ) -> list[CorrelatedDetection]:
-    """
-    Correlate detections across three sites using a greedy matching approach.
+    """Correlate detections across three sites using a greedy matching approach.
 
     This algorithm iterates through detections at a reference site and finds
     corresponding detections at the other sites within the specified time gates.
 
-    Parameters
-    ----------
-    times : dict[str, np.ndarray]
-        Dictionary mapping site names to arrays of detection times
-    time_gates : dict[tuple[str, str], float]
-        Dictionary mapping site pairs to maximum time delays in seconds
-        Keys should be tuples like ('3dvha', 'vla1')
-    reference_site : str, optional
-        Which site to use as reference (default: '3dvha')
+    Args:
+        times: Dictionary mapping site names to arrays of detection times.
+        time_gates: Dictionary mapping site pairs to maximum time delays in seconds.
+            Keys should be tuples like ('3dvha', 'vla1').
+        reference_site: Which site to use as reference. Defaults to 'vla1'.
 
-    Returns
-    -------
-    list[CorrelatedDetection]
-        List of correlated detections
+    Returns:
+        List of correlated detections.
     """
     # Get site names
     sites = list(times.keys())
@@ -410,8 +391,7 @@ def correlate_detections_triplet_gated(
     time_gates: dict[tuple[str, str], float],
     reference_site: str,
 ) -> list[CorrelatedDetection]:
-    """
-    Correlate detections anchored on a single reference site, returning only
+    """Correlate detections anchored on a single reference site, returning only
     complete triplets.
 
     Unlike ``correlate_detections_triplet``, this function:
@@ -424,18 +404,12 @@ def correlate_detections_triplet_gated(
     - Still enforces the mutual A–B time-gate to guard against coincidental
       in-window matches at the two non-reference sites.
 
-    Parameters
-    ----------
-    times : dict[str, np.ndarray]
-        Detection times per site.
-    time_gates : dict[tuple[str, str], float]
-        Maximum time delay in seconds for each site pair.
-    reference_site : str
-        Site that must have a detection for any triplet to be recorded.
+    Args:
+        times: Detection times per site.
+        time_gates: Maximum time delay in seconds for each site pair.
+        reference_site: Site that must have a detection for any triplet to be recorded.
 
-    Returns
-    -------
-    list[CorrelatedDetection]
+    Returns:
         Complete triplets only.
     """
     sites = list(times.keys())
@@ -527,32 +501,21 @@ def estimate_tdoa(
 def correlations_to_dataframe(
     correlations: list[CorrelatedDetection], reference_site: str = "3dvha"
 ) -> pl.DataFrame:
-    """
-    Convert correlated detections to a Polars DataFrame with TDOA values.
+    """Convert correlated detections to a Polars DataFrame with TDOA values.
 
     The DataFrame contains a timestamp column (from the reference site) and
     TDOA columns for each site (time difference in seconds from reference).
+    TDOA values are computed as site_time - reference_time; positive values
+    mean the signal arrived later at that site.
 
-    Parameters
-    ----------
-    correlations : List[CorrelatedDetection]
-        List of correlated detections (should be complete triplets)
-    reference_site : str, optional
-        Site to use as time reference (default: '3dvha')
+    Args:
+        correlations: List of correlated detections (should be complete triplets).
+        reference_site: Site to use as time reference. Defaults to '3dvha'.
 
-    Returns
-    -------
-    pl.DataFrame
-        DataFrame with columns:
-        - timestamp: Reference site detection time
-        - 3dvha: TDOA in seconds (0.0 if reference site)
-        - vla1: TDOA in seconds
-        - vla2: TDOA in seconds
-
-    Notes
-    -----
-    TDOA values are computed as: site_time - reference_time
-    Positive values mean the signal arrived later at that site.
+    Returns:
+        DataFrame with columns: timestamp (reference site detection time),
+        3dvha (TDOA in seconds, 0.0 if reference site), vla1 (TDOA in seconds),
+        and vla2 (TDOA in seconds).
     """
     timestamps = []
     tdoa_3dvha = []
@@ -602,18 +565,20 @@ def estimate_range(df: pl.DataFrame, tangential_speed: float = 35.0) -> pl.DataF
     """Estimate whale range from smoothed angular velocity.
 
     Args:
-        df: DataFrame containing 'angular_velocity_smoothed' column
-        tangential_speed: Maximum tangential speed of whale in km/h (default: 35.0)
+        df: DataFrame containing 'angular_velocity_smoothed' column.
+        tangential_speed: Maximum tangential speed of whale in km/h. Defaults to 35.0.
 
     Returns:
         DataFrame with new column 'whale_range_km' containing estimated range in kilometers.
     """
-    ranges = compute_whale_range(
+    ranges_max = compute_whale_range(
         np.abs(df["slope_deg_s"].to_numpy()),
         tangential_speed=tangential_speed,
     )
+    ranges_25 = 0.25 * ranges_max
     return df.with_columns(
-        pl.Series("whale_range_km", ranges).fill_nan(None).cast(pl.Float64)
+        pl.Series("whale_range_km", ranges_max).fill_nan(None).cast(pl.Float64),
+        pl.Series("whale_range_km_25pct", ranges_25).fill_nan(None).cast(pl.Float64),
     )
 
 
@@ -625,6 +590,7 @@ def estimate_tdoa_greedy(
     Args:
         whale_call_data: Path to whale call detection times.
         distance_lut: Path to distance lookup table.
+        reference_site: Site to use as time reference.
 
     Returns:
         DataFrame with correlated detections and TDOA values.
@@ -644,24 +610,16 @@ def find_matches_in_window(
     max_delay: float,
     used_indices: set,
 ) -> list[int]:
-    """
-    Find all matching times within a time gate window.
+    """Find all matching times within a time gate window.
 
-    Parameters
-    ----------
-    reference_time : np.datetime64
-        Reference detection time
-    search_times : np.ndarray
-        Array of detection times to search
-    max_delay : float
-        Maximum time delay in seconds (time gate)
-    used_indices : set
-        Set of indices already matched (to avoid double-counting)
+    Args:
+        reference_time: Reference detection time.
+        search_times: Array of detection times to search.
+        max_delay: Maximum time delay in seconds (time gate).
+        used_indices: Set of indices already matched (to avoid double-counting).
 
-    Returns
-    -------
-    List[int]
-        Indices of matching detections in search_times
+    Returns:
+        Indices of matching detections in search_times.
     """
     # Convert max_delay to timedelta
     time_gate = np.timedelta64(int(max_delay * 1e6), "us")
@@ -680,9 +638,22 @@ def find_matches_in_window(
 
 
 def functions(x0, y0, x1, y1, x2, y2, d01, d02, d12):
-    """Given observers at (x0, y0), (x1, y1), (x2, y2) and TDOA between
-    observers d01, d02, d12, this closure returns a function that evaluates
-    the system of three hyperbolae for given event x, y.
+    """Return a function evaluating the system of three hyperbolae for a given event.
+
+    Args:
+        x0: Easting of observer 0.
+        y0: Northing of observer 0.
+        x1: Easting of observer 1.
+        y1: Northing of observer 1.
+        x2: Easting of observer 2.
+        y2: Northing of observer 2.
+        d01: TDOA (in distance units) between observers 0 and 1.
+        d02: TDOA (in distance units) between observers 0 and 2.
+        d12: TDOA (in distance units) between observers 1 and 2.
+
+    Returns:
+        A callable that takes (x, y) and returns the residuals of the three
+        hyperbolic equations.
     """
 
     def fn(args):
@@ -843,25 +814,17 @@ def localize(config: LocalizationConfig) -> None:
 
 
 def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
-    """
-    Load TDOA data from CSV and compute locations using TDOA localization.
+    """Compute locations from TDOA data using least-squares localization.
 
-    Parameters:
-    -----------
-    tdoa_csv_path : str
-        Path to the TDOA CSV file containing columns: timestamp, 3dvha, vla1, vla2
+    Args:
+        df: DataFrame containing TDOA columns: timestamp, 3dvha, vla1, vla2.
+        sensor_data: Path to the sensor positions CSV file.
 
     Returns:
-    --------
-    pl.DataFrame
         DataFrame with original TDOA data plus computed location columns:
-        - easting: East coordinate in meters
-        - northing: North coordinate in meters
-        - latitude: Latitude in degrees
-        - longitude: Longitude in degrees
-        - 3dvha_brg: True bearing from 3DVHA sensor to target (degrees, 0-360)
-        - vla1_brg: True bearing from VLA1 sensor to target (degrees, 0-360)
-        - vla2_brg: True bearing from VLA2 sensor to target (degrees, 0-360)
+        easting (m), northing (m), latitude (degrees), longitude (degrees),
+        3dvha_brg, vla1_brg, and vla2_brg (true bearing from each sensor to
+        target, in degrees 0–360).
     """
     # Get sensor positions and reference coordinates
     sensor_eastings, sensor_northings, lat0, lon0 = read_sensor_positions(sensor_data)
@@ -972,21 +935,18 @@ def jacobian(x0, y0, x1, y1, x2, y2, d01, d02, d12):
 def merge_correlations(
     results: dict[str, list[CorrelatedDetection]], tolerance: float = 0.001
 ) -> list[CorrelatedDetection]:
-    """
-    Merge correlations from different reference sites to get complete triplets only.
+    """Merge correlations from different reference sites to get complete triplets only.
 
-    This function:
-    1. Collects all correlations from different reference site runs
-    2. Merges complementary partial matches to form complete triplets
-    3. Deduplicates complete triplets within the time tolerance
-    4. Returns only complete 3-site detections
+    Collects all correlations from different reference site runs, merges
+    complementary partial matches to form complete triplets, deduplicates
+    within the time tolerance, and returns only complete 3-site detections.
 
     Args:
-        results: Results from correlate_all_references
-        tolerance: Time tolerance in seconds for considering detections as duplicates
+        results: Results from correlate_all_references.
+        tolerance: Time tolerance in seconds for considering detections as duplicates.
 
     Returns:
-        List of unique complete triplets only (all 3 sites present)
+        List of unique complete triplets only (all 3 sites present).
     """
     # Convert tolerance to timedelta
     time_tolerance = np.timedelta64(int(tolerance * 1e6), "us")
@@ -1078,8 +1038,8 @@ def smooth_angular_velocity(df: pl.DataFrame, window_size: int = 5) -> pl.DataFr
     """Smooth angular velocity using a rolling mean.
 
     Args:
-        df: DataFrame containing 'angular_velocity' column
-        window_size: Size of the rolling window (default: 5)
+        df: DataFrame containing 'angular_velocity' column.
+        window_size: Size of the rolling window. Defaults to 5.
 
     Returns:
         DataFrame with new column 'angular_velocity_smoothed' containing the smoothed values.

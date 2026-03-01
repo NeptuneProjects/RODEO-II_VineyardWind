@@ -22,6 +22,7 @@ def extract_trace(
         ds: DataStream containing the acoustic data.
         start_time: Start time of the trace to extract.
         end_time: End time of the trace to extract.
+
     Returns:
         Extracted trace data.
     """
@@ -42,10 +43,10 @@ def get_anchor_trace(corr_matrix_window: np.ndarray) -> int:
     trace with the highest median correlation to all others.
 
     Args:
-        corr_matrix_window (np.ndarray): Correlation matrix for the strikes
-            in the current window.
+        corr_matrix_window: Correlation matrix for the strikes in the current window.
+
     Returns:
-        int: Index of the anchor trace within the window.
+        Index of the anchor trace within the window.
     """
     corr_matrix_masked = np.where(corr_matrix_window < 1.0, corr_matrix_window, np.nan)
     median_corrs = np.nanmedian(corr_matrix_masked, axis=0)

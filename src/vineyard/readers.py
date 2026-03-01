@@ -31,22 +31,16 @@ def calibrate(
 
 
 def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
-    """
-    Apply frequency-dependent sensitivity calibration to convert voltage to micropascals.
+    """Apply frequency-dependent sensitivity calibration to convert voltage to micropascals.
 
-    Parameters
-    ----------
-    cal_file : Path
-        Path to calibration file with frequency (Hz) and sensitivity (dB re 1V/uPa) columns
-    signal : np.ndarray
-        Time-series signal in volts
-    fs : float
-        Sampling rate in Hz
+    Args:
+        cal_file: Path to calibration file with frequency (Hz) and sensitivity
+            (dB re 1V/uPa) columns.
+        signal: Time-series signal in volts.
+        fs: Sampling rate in Hz.
 
-    Returns
-    -------
-    np.ndarray
-        Calibrated signal in micropascals
+    Returns:
+        Calibrated signal in micropascals.
     """
     # Load calibration data
     data = np.loadtxt(cal_file, skiprows=1, delimiter=",")
@@ -76,22 +70,16 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
 
 
 def calibrate_vla(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
-    """
-    Apply frequency-independent sensitivity calibration to convert voltage to micropascals.
+    """Apply frequency-independent sensitivity calibration to convert voltage to micropascals.
 
-    Parameters
-    ----------
-    cal_file : Path
-        Path to TOML calibration file with fixed_gain and sensitivity fields (both in dB)
-    signal : np.ndarray
-        Time-series signal in volts
-    fs : float
-        Sampling rate in Hz (unused but kept for API consistency)
+    Args:
+        cal_file: Path to TOML calibration file with fixed_gain and sensitivity
+            fields (both in dB).
+        signal: Time-series signal in volts.
+        fs: Sampling rate in Hz (unused but kept for API consistency).
 
-    Returns
-    -------
-    np.ndarray
-        Calibrated signal in micropascals
+    Returns:
+        Calibrated signal in micropascals.
     """
     with open(cal_file, "rb") as f:
         cal_data = tomllib.load(f)
@@ -138,6 +126,7 @@ def read_bathymetry(
 
     Args:
         file: Path to the HDF5 file.
+
     Returns:
         Tuple of numpy arrays containing bathymetry data, longitude vector, and latitude vector.
     """
@@ -268,11 +257,12 @@ def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> Da
     """Read the strike index from a CSV file and apply time buffers.
 
     Args:
-        index (Path): Path to the CSV file containing the strike index.
-        buffer_start (float): Buffer time in seconds to subtract from the peak time.
-        buffer_end (float): Buffer time in seconds to add to the peak time.
+        index: Path to the CSV file containing the strike index.
+        buffer_start: Buffer time in seconds to subtract from the peak time.
+        buffer_end: Buffer time in seconds to add to the peak time.
+
     Returns:
-        DataFrame: Polars DataFrame with adjusted start and end times.
+        Polars DataFrame with adjusted start and end times.
     """
     start = pl.duration(
         microseconds=buffer_start * TIME_CONVERSION_FACTOR, time_unit=TIME_PRECISION
@@ -292,8 +282,7 @@ def read_strike_index(index: Path, buffer_start: float, buffer_end: float) -> Da
 
 
 def read_strikes(sensor_group: h5py.Group, **kwargs) -> tuple[NDArray, NDArray]:
-    """Read the strike data for a single sensor from the HDF5 group and
-    process it.
+    """Read the strike data for a single sensor from the HDF5 group and process it.
 
     Args:
         sensor_group: HDF5 group containing the strike data for a single sensor.
@@ -301,11 +290,10 @@ def read_strikes(sensor_group: h5py.Group, **kwargs) -> tuple[NDArray, NDArray]:
             function.
 
     Returns:
-        A tuple containing:
-        - data: 2D array of shape (num_detections, num_samples) containing the
-            processed strike data for the sensor.
-        - t0: 1D array of shape (num_detections,) containing the initial time
-            of each strike detection.
+        A tuple of (data, t0) where data is a 2D array of shape
+        (num_detections, num_samples) containing the processed strike data,
+        and t0 is a 1D array of shape (num_detections,) with the initial time
+        of each strike detection.
     """
     num_detections = len(sensor_group)
 
@@ -334,9 +322,10 @@ def read_turbine_locations(file: Path) -> pd.DataFrame:
     """Read the turbine locations from a CSV file.
 
     Args:
-        file (Path): Path to the CSV file.
+        file: Path to the CSV file.
+
     Returns:
-        Dataframe with turbine locations in latitudes/longitudes.
+        DataFrame with turbine locations in latitudes/longitudes.
     """
     logging.info(f"Reading file: {file}")
     df = pd.read_csv(file)
@@ -370,6 +359,7 @@ def read_whale_template(template_path: Path, sensor: str, call_type: str) -> Dat
         template_path: Path to the HDF5 file containing the whale templates.
         sensor: Name of the sensor.
         call_type: Type of whale call (e.g., "type1", "type2").
+
     Returns:
         DataStream containing the whale template data.
     """
@@ -386,8 +376,10 @@ def read_xcorr_data(data_path: Path, sensor: str) -> tuple[NDArray, NDArray, NDA
     Args:
         data_path: Path to the HDF5 file containing the cross-correlation data.
         sensor: Name of the sensor to read data for.
+
     Returns:
-        Tuple of numpy arrays containing the cross-correlation data, shift matrix, and time differences.
+        Tuple of numpy arrays containing the cross-correlation data, shift matrix,
+        and time differences.
     """
     logging.info(f"Reading xcorr data for sensor {sensor} from: {data_path}")
     with h5py.File(data_path, "r") as f:
