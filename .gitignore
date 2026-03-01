@@ -181,7 +181,15 @@ Thumbs.db
 .vscode/
 /references
 /reports
-/data
 /.scratch
 workflow.md
 uv.lock
+
+# Omit large data files
+/data/**
+!/data/**/
+!/data/**/*.csv
+!/data/**/*.toml
+data/acoustic/3dvha_vector_sensor_imu.csv
+data/acoustic/inventory*.csv
+data/acoustic/raw/**
