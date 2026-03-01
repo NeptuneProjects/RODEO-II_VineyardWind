@@ -11,9 +11,9 @@ from polars import DataFrame
 from vineyard.figures.common import add_panel_label
 from vineyard.figures.maps import (
     _create_context_inset,
-    _get_active_turbine_info,
-    _load_map_data,
-    _plot_study_area,
+    get_active_turbine_info,
+    load_map_data,
+    plot_study_area,
 )
 
 BBOX_INSET = [[-70.55, -70.249], [41.0, 41.2]]
@@ -44,8 +44,8 @@ def plot_experiment_setup(
         turbine_locations,
         _,
         _,
-    ) = _load_map_data(bathy_data, sensor_data, turbine_data)
-    active_turbine = _get_active_turbine_info(turbine_locations, active_turbine_name)
+    ) = load_map_data(bathy_data, sensor_data, turbine_data)
+    active_turbine = get_active_turbine_info(turbine_locations, active_turbine_name)
 
     fig, axes = plt.subplots(
         ncols=2,
@@ -174,7 +174,7 @@ def create_map(
     Returns:
         Matplotlib Axes with the map.
     """
-    ax, _ = _plot_study_area(
+    ax, _ = plot_study_area(
         bathy,
         lonvec,
         latvec,
