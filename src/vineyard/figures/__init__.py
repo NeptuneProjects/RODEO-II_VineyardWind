@@ -233,7 +233,6 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             bathy_data=config.whale_tracking.bathy_data,
             sensor_data=config.whale_tracking.sensor_data,
             turbine_data=config.whale_tracking.turbine_data,
-            active_turbine_name=config.whale_tracking.active_turbine_name,
             whale_bearings=config.whale_tracking.whale_bearings,
             whale_ranges=config.whale_tracking.whale_ranges,
             time_ranges=config.whale_tracking.time_ranges,

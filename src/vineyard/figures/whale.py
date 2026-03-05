@@ -171,7 +171,7 @@ def plot_trajectory_phase(
             zorder=15,
         )
 
-    ax.set_xlabel("DOA (°)")
+    ax.set_xlabel("DOA (°T)")
     ax.set_ylabel("Range (km)")
     ax.yaxis.set_label_position("right")
     ax.yaxis.tick_right()
@@ -325,7 +325,7 @@ def plot_whale_data(
     ax.grid()
     ax.axhline(180, color="k", linestyle="--", linewidth=0.75, zorder=5)
     ax.tick_params(labelbottom=False)
-    ax.set_ylabel("DOA (°)")
+    ax.set_ylabel("DOA (°T)")
     ax.legend(["Estimates", "Segmented linear fits"], loc="upper right", framealpha=1.0)
     add_panel_label(ax, "a")
 
