@@ -12,21 +12,21 @@ import polars as pl
 from numpy.typing import ArrayLike, NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
+from rodeo.utils import compute_array_size, initialize_julia
 from scipy.signal import find_peaks, hilbert
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5
 from tritonoa.data.signal import taper
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+import vineyard.readers as readers
+from vineyard.figures.templates import plot_template
 from vineyard.process_utils import (
     enforce_same_size,
     extract_trace,
     get_anchor_trace,
     sample_delay,
 )
-import vineyard.readers as readers
-from rodeo.utils import compute_array_size, initialize_julia
-from vineyard.figures.templates import plot_template
 
 logger = logging.getLogger(__name__)
 
@@ -504,7 +504,7 @@ def build_strikes_df(
         for i, (time_start, time_end) in enumerate(time_ranges):
             logger.info(
                 f"Processing sensor {sensor['name']}, time range "
-                f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
+                f"{i + 1}/{len(time_ranges)}: {time_start} to {time_end}"
             )
 
             df = _build_strikes_df_per_sensor(
@@ -805,7 +805,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
             height=sensor["threshold"],
             distance=int(sensor["distance_s"] * fs),
         )[0]
-        times = ds.time_vector[peaks]
+        times = _refine_peak_times(cf, peaks, ds.time_vector, fs)
         del cf, ds
         gc.collect()
         logger.info(f"Detected {len(peaks)} whale calls on sensor {sensor['name']}.")
@@ -1012,6 +1012,43 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
         )
 
 
+def _refine_peak_times(
+    cf: NDArray[np.float64],
+    peaks: NDArray[np.intp],
+    time_vector: NDArray,
+    fs: float,
+) -> NDArray:
+    """Refine integer-sample peak locations to sub-sample precision via parabolic interpolation.
+
+    Fits a parabola through each peak and its two immediate neighbors to
+    estimate the true maximum to fractional-sample accuracy, then converts
+    the offset to a timedelta and adds it to the sample time.  Peaks at the
+    array boundary (index 0 or N-1) are returned at their original sample time.
+
+    Args:
+        cf: Characteristic function from which peaks were detected.
+        peaks: Integer sample indices returned by find_peaks.
+        time_vector: Time vector aligned with cf (numpy datetime64 array).
+        fs: Sampling rate in Hz.
+
+    Returns:
+        Array of refined peak times (same dtype as time_vector).
+    """
+    n = len(cf)
+    deltas = np.zeros(len(peaks))
+    interior = (peaks > 0) & (peaks < n - 1)
+
+    if interior.any():
+        p = peaks[interior]
+        a, b, c = cf[p - 1], cf[p], cf[p + 1]
+        denom = a - 2.0 * b + c
+        with np.errstate(invalid="ignore", divide="ignore"):
+            deltas[interior] = np.where(denom != 0.0, 0.5 * (a - c) / denom, 0.0)
+
+    offsets_us = np.round(deltas * 1e6 / fs).astype(np.int64)
+    return time_vector[peaks] + offsets_us.astype("timedelta64[us]")
+
+
 def save_strikes(
     config: StrikeConfig, inventory_path: Path, calibration_dir: Path
 ) -> None:
@@ -1076,7 +1113,7 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
 
     logger.info(f"Data shape: {num_detections} detections.")
     logger.info(
-        f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024 ** 3):.2f} GB."
+        f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024**3):.2f} GB."
     )
 
     jl = initialize_julia("CrossCorr")
