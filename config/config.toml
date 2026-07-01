@@ -155,9 +155,9 @@ type2 = { start = "2023-12-01T22:25:55.08", end = "2023-12-01T22:25:56.39" }
 
 [process.whale_detection]
 sensors = [
-    { name = "3dvha", distance_s = 7.0, threshold = 0.32 }, # 0.25 / 0.32
-    { name = "vla1", distance_s = 7.0, threshold = 0.27 },  # 0.15 / 0.27
-    { name = "vla2", distance_s = 7.0, threshold = 0.24 },  # 0.3 / 0.24
+    { name = "3dvha", distance_s = 7.0, threshold = 0.32 },
+    { name = "vla1", distance_s = 7.0, threshold = 0.27 },
+    { name = "vla2", distance_s = 7.0, threshold = 0.24 },
 ]
 channel = 5
 filt_type = "bandpass"
@@ -224,10 +224,10 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 # nperseg = 16384
 # hop = 32
 # flim = [10.0, 90.0]
-# whale_ylim = [-3e7, 3e7]
-# strike_ylim = [-3e8, 3e8]
+# whale_ylim = [-2e7, 2e7]
+# strike_ylim = [-1e8, 1e8]
 # figsize = [9, 9]
-# # output = "reports/figures/signal_templates.png"
+# # output = "reports/figures/signal_templates2.png"
 # output = "reports/scirep/figure02.png"
 
 # [plotting.signal_template.example_signal]
@@ -238,13 +238,13 @@ mpl_style = "config/scirep_fig_style.mplstyle"
 # start_buffer = 60.0
 # end_buffer = 60.0
 # datadir = "data/acoustic/denoised"
-# ylim = [-7e7, 7e7]
+# ylim = [-2e7, 2e7]
 
-[plotting.correlation]
-corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
-window = 120.0
-# output = "reports/figures/strike_correlation.png"
-output = "reports/scirep/figure03.png"
+# [plotting.correlation]
+# corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
+# window = 120.0
+# # output = "reports/figures/strike_correlation.png"
+# output = "reports/scirep/figure03.png"
 
 # [plotting.template_construction]
 # sensor_name = "vla1"
@@ -253,6 +253,7 @@ output = "reports/scirep/figure03.png"
 
 # [plotting.pr_curve]
 # pr_curve_data = "reports/evaluation/pr_curve_data.csv"
+# # output = "reports/figures/pr_curve.png"
 # output = "reports/scirep/figure05.png"
 
 # [plotting.tdoa_sensitivity]
@@ -281,5 +282,5 @@ output = "reports/scirep/figure03.png"
 
 # [plotting.whale_tracking]
 # whale_data = "data/acoustic/tdoa/localization.csv"
-# # output = "reports/figures/whale_tracking.png"
+# output = "reports/figures/whale_tracking.png"
 # output = "reports/scirep/figure09.png"

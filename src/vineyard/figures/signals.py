@@ -32,7 +32,7 @@ def plot_sensor_column(
     flim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
     vmin: float | None = 70,
-    vmax: float | None = 130,
+    vmax: float | None = 120,
 ):
     """Plot time series and spectrogram for a single sensor column.
 
@@ -136,8 +136,8 @@ def plot_signals(
         nfft=nfft,
         flim=flim,
         ylim=example_signal["ylim"],
-        vmin=70,
-        vmax=130,
+        vmin=60,
+        vmax=120,
     )
     if spec_image is None:
         spec_image = im
