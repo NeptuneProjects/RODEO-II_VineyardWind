@@ -1202,18 +1202,18 @@ def process_data(config: ProcessConfig) -> None:
         config: ProcessConfig instance containing the configuration for
             data processing.
     """
-    # logger.info("==== BEGIN STRIKE DETECTION ====")
-    # build_strikes_df(
-    #     config.strike_config,
-    #     config.start_time,
-    #     config.time_ranges,
-    #     config.inventory_path,
-    # )
-    # logger.info("==== STRIKE DETECTION COMPLETE ====")
+    logger.info("==== BEGIN STRIKE DETECTION ====")
+    build_strikes_df(
+        config.strike_config,
+        config.start_time,
+        config.time_ranges,
+        config.inventory_path,
+    )
+    logger.info("==== STRIKE DETECTION COMPLETE ====")
 
-    # logger.info("==== BEGIN STRIKE SAVING ====")
-    # save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
-    # logger.info("==== STRIKE SAVING COMPLETE ====")
+    logger.info("==== BEGIN STRIKE SAVING ====")
+    save_strikes(config.strike_config, config.inventory_path, config.calibration_dir)
+    logger.info("==== STRIKE SAVING COMPLETE ====")
 
     logger.info("==== BEGIN STRIKE CROSS-CORRELATION ====")
     xcorr_strike_pairs(
@@ -1223,45 +1223,45 @@ def process_data(config: ProcessConfig) -> None:
     )
     logger.info("==== STRIKE CROSS-CORRELATION COMPLETE ====")
 
-    # logger.info("==== BEGIN TEMPLATE BUILDING ====")
-    # build_templates(
-    #     config.template_config,
-    #     config.start_time,
-    #     config.end_time,
-    #     config.inventory_path,
-    #     config.calibration_dir,
-    #     config.strike_config.strike_index,
-    #     config.strike_config.strike_corr,
-    # )
-    # logger.info("==== TEMPLATE BUILDING COMPLETE ====")
+    logger.info("==== BEGIN TEMPLATE BUILDING ====")
+    build_templates(
+        config.template_config,
+        config.start_time,
+        config.end_time,
+        config.inventory_path,
+        config.calibration_dir,
+        config.strike_config.strike_index,
+        config.strike_config.strike_corr,
+    )
+    logger.info("==== TEMPLATE BUILDING COMPLETE ====")
 
-    # logger.info("==== BEGIN STRIKE DENOISING ====")
-    # denoise_strikes(
-    #     config.denoise_config,
-    #     config.start_time,
-    #     config.end_time,
-    #     config.inventory_path,
-    #     config.calibration_dir,
-    #     config.strike_config.strike_index,
-    #     config.template_config.template_data,
-    # )
-    # logger.info("==== STRIKE DENOISING COMPLETE ====")
+    logger.info("==== BEGIN STRIKE DENOISING ====")
+    denoise_strikes(
+        config.denoise_config,
+        config.start_time,
+        config.end_time,
+        config.inventory_path,
+        config.calibration_dir,
+        config.strike_config.strike_index,
+        config.template_config.template_data,
+    )
+    logger.info("==== STRIKE DENOISING COMPLETE ====")
 
-    # logger.info("==== BEGIN WHALE TEMPLATE EXTRACTION ====")
-    # extract_whale_templates(
-    #     config.whale_template_config, config.inventory_path, config.calibration_dir
-    # )
-    # logger.info("==== WHALE TEMPLATE EXTRACTION COMPLETE ====")
+    logger.info("==== BEGIN WHALE TEMPLATE EXTRACTION ====")
+    extract_whale_templates(
+        config.whale_template_config, config.inventory_path, config.calibration_dir
+    )
+    logger.info("==== WHALE TEMPLATE EXTRACTION COMPLETE ====")
 
-    # logger.info("==== BEGIN PULSE COMPRESSION ====")
-    # pulse_compress(config.denoise_config, config.whale_template_config)
-    # logger.info("==== PULSE COMPRESSION COMPLETE ====")
+    logger.info("==== BEGIN PULSE COMPRESSION ====")
+    pulse_compress(config.denoise_config, config.whale_template_config)
+    logger.info("==== PULSE COMPRESSION COMPLETE ====")
 
-    # logger.info("==== BEGIN WHALE CALL DETECTION ====")
-    # detect_whale_calls(
-    #     config.whale_detection_config, config.denoise_config.denoised_data
-    # )
-    # logger.info("==== WHALE CALL DETECTION COMPLETE ====")
+    logger.info("==== BEGIN WHALE CALL DETECTION ====")
+    detect_whale_calls(
+        config.whale_detection_config, config.denoise_config.denoised_data
+    )
+    logger.info("==== WHALE CALL DETECTION COMPLETE ====")
 
 
 def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -> None:
