@@ -9,9 +9,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from vineyard.etl import ETLConfig, run_etl
+from vineyard.evaluate import (
+    EvaluationConfig,
+    run_evaluation,
+    run_pr_sweep,
+)
 from vineyard.figures import PlottingConfig, make_figures
-from vineyard.process import ProcessConfig, process_data
-from vineyard.tdoa import LocalizationConfig, localize
+from vineyard.process import ProcessConfig, detect_whale_calls, process_data
+from vineyard.doa import localize_farfield
+from vineyard.tdoa import LocalizationConfig
 
 
 class MetadataConfig(BaseModel):
@@ -30,6 +36,7 @@ class Config(BaseModel):
     process_config: ProcessConfig = Field(alias="process")
     tdoa_config: LocalizationConfig = Field(alias="tdoa")
     plotting_config: PlottingConfig = Field(alias="plotting")
+    evaluation_config: EvaluationConfig | None = Field(default=None, alias="evaluation")
 
     @model_validator(mode="after")
     def sync_attributes(self) -> "Config":
@@ -71,29 +78,9 @@ class Config(BaseModel):
                 )
 
         if self.plotting_config.whale_tracking is not None:
-            if self.plotting_config.whale_tracking.bathy_data is None:
-                self.plotting_config.whale_tracking.bathy_data = (
-                    self.etl_config.bathymetry.output_path
-                )
-            if self.plotting_config.whale_tracking.sensor_data is None:
-                self.plotting_config.whale_tracking.sensor_data = (
-                    self.metadata_config.sensor_data
-                )
-            if self.plotting_config.whale_tracking.turbine_data is None:
-                self.plotting_config.whale_tracking.turbine_data = (
-                    self.metadata_config.turbine_data
-                )
-            if self.plotting_config.whale_tracking.active_turbine_name is None:
-                self.plotting_config.whale_tracking.active_turbine_name = (
-                    self.metadata_config.source_pile
-                )
-            if self.plotting_config.whale_tracking.whale_bearings is None:
-                self.plotting_config.whale_tracking.whale_bearings = (
+            if self.plotting_config.whale_tracking.whale_data is None:
+                self.plotting_config.whale_tracking.whale_data = (
                     self.tdoa_config.localization_file
-                )
-            if self.plotting_config.whale_tracking.whale_ranges is None:
-                self.plotting_config.whale_tracking.whale_ranges = (
-                    self.tdoa_config.range_file
                 )
             if self.plotting_config.whale_tracking.time_ranges is None:
                 self.plotting_config.whale_tracking.time_ranges = (
@@ -163,13 +150,33 @@ class Config(BaseModel):
                     self.process_config.template_config.window_size
                 )
 
+        if (
+            self.evaluation_config is not None
+            and self.evaluation_config.pr_sweep is not None
+        ):
+            ps = self.evaluation_config.pr_sweep
+            wd = self.process_config.whale_detection_config
+            if wd is not None:
+                if ps.sensors is None:
+                    ps.sensors = wd.sensors
+                # Always align these with the detector so the sweep is comparable
+                ps.denoised_channel = wd.channel
+                if wd.filt_type is not None:
+                    ps.filt_type = wd.filt_type
+                if wd.filt_freq is not None:
+                    ps.filt_freq = wd.filt_freq
+            if ps.pc_data_dir is None:
+                ps.pc_data_dir = self.evaluation_config.pc_data_dir
+            ps.match_window_s = self.evaluation_config.time_window_s
+
         return self
 
 
 def run_workflow(
-    command: Literal["run", "etl", "process", "localize", "plot"],
+    command: Literal["run", "etl", "process", "localize", "plot", "detect", "evaluate"],
     config_path: Path,
     show: bool = False,
+    prsweep: bool = False,
 ) -> Config:
     """Run the ETL workflow with the given config file.
 
@@ -177,7 +184,9 @@ def run_workflow(
         command: The workflow command to execute. 'run' executes both ETL and
             processing steps, 'etl' executes only the ETL step, 'process'
             executes only the processing step, 'localize' executes only
-            the TDOA estimation step, and 'plot' generates the figures.
+            the TDOA estimation step, 'plot' generates the figures, 'detect'
+            runs only the whale call detection step, and 'evaluate' runs
+            detection performance evaluation.
         config_path: Path to the TOML configuration file.
 
     Returns:
@@ -188,12 +197,20 @@ def run_workflow(
         "run": lambda config: (
             run_etl(config.etl_config),
             process_data(config.process_config),
-            localize(config.tdoa_config),
+            localize_farfield(config.tdoa_config),
         ),
         "etl": lambda config: run_etl(config.etl_config),
         "process": lambda config: process_data(config.process_config),
-        "localize": lambda config: localize(config.tdoa_config),
+        "localize": lambda config: localize_farfield(config.tdoa_config),
         "plot": lambda config: make_figures(config.plotting_config, show=show),
+        "detect": lambda config: detect_whale_calls(
+            config.process_config.whale_detection_config,
+            config.process_config.denoise_config.denoised_data,
+        ),
+        "evaluate": lambda config: run_evaluation(
+            config.evaluation_config,
+            config.process_config.time_ranges,
+        ),
     }
 
     with open(config_path, "rb") as f:
@@ -204,6 +221,22 @@ def run_workflow(
 
     COMMAND_REGISTRY[command](config)
 
+    if prsweep:
+        if command != "evaluate":
+            raise ValueError("--prsweep is only valid with the 'evaluate' command")
+        if (
+            config.evaluation_config is None
+            or config.evaluation_config.pr_sweep is None
+        ):
+            raise ValueError(
+                "--prsweep requires [evaluation.pr_sweep] to be configured in config.toml"
+            )
+        run_pr_sweep(
+            config.evaluation_config.pr_sweep,
+            config.evaluation_config.annotations_file,
+            config.process_config.time_ranges,
+        )
+
     return config
 
 
@@ -212,12 +245,15 @@ def main() -> None:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=["run", "etl", "process", "localize", "plot"],
+        choices=["run", "etl", "process", "localize", "plot", "detect", "evaluate"],
         help=(
             "The workflow command to execute. 'run' executes both ETL and "
             "processing steps, 'etl' executes only the ETL step, 'process' "
             "executes only the processing step, 'localize' executes only "
-            "the TDOA estimation step, and 'plot' generates the figures."
+            "the TDOA estimation step, 'plot' generates the figures, "
+            "'detect' runs only the whale call detection step (denoised and "
+            "raw channels if configured), and 'evaluate' runs detection "
+            "performance evaluation."
         ),
     )
     parser.add_argument(
@@ -234,8 +270,16 @@ def main() -> None:
         action="store_true",
         help="Whether to display the generated figures after saving.",
     )
+    parser.add_argument(
+        "--prsweep",
+        action="store_true",
+        help=(
+            "When used with 'evaluate', run a full detection threshold sweep "
+            "and save PR curve data to the path configured in [evaluation.pr_sweep]."
+        ),
+    )
     args = parser.parse_args()
-    run_workflow(args.command, args.config, show=args.show)
+    run_workflow(args.command, args.config, show=args.show, prsweep=args.prsweep)
 
 
 if __name__ == "__main__":

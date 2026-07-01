@@ -11,6 +11,12 @@ from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 SECONDS_BETWEEN_STRIKES = 1.7
 
+sensor_map = {
+    "3dvha": "Site A",
+    "vla1": "Site B",
+    "vla2": "Site C",
+}
+
 
 def _compute_pdf_vs_time(
     data: NDArray, confidence: float = 0.95
@@ -113,7 +119,7 @@ def _plot_corr(
                 )
                 ax.set_xticklabels([])
                 ax.set_xlabel(None)
-                ax.set_title(sensor.upper())
+                ax.set_title(sensor_map.get(sensor, sensor.upper()))
                 if j == 0:
                     ax.set_ylabel("Strike index ($i$)")
                 else:

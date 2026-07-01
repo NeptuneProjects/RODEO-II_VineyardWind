@@ -67,14 +67,11 @@ class ExperimentConfig(BaseModel):
 class WhaleTrackingConfig(BaseModel):
     """Configuration for whale tracking figure creation."""
 
-    bathy_data: Path | None = None
-    sensor_data: Path | None = None
-    turbine_data: Path | None = None
-    active_turbine_name: str | None = None
-    whale_bearings: Path | None = None
-    whale_ranges: Path | None = None
+    whale_data: Path | None = None
     time_ranges: list[list[str]] | None = None
     output: Path = "reports/figures/whale_tracking.png"
+    brg_ylim: tuple[float, float] | None = None  # bearing panel y-axis limits (degrees)
+    brg_ref: float | None = None  # optional reference bearing line (degrees)
 
     @model_validator(mode="after")
     def convert_to_np_datetime(self) -> "WhaleTrackingConfig":
@@ -167,14 +164,25 @@ class DOPConfig(BaseModel):
 
 
 class TDOASensitivityConfig(BaseModel):
-    """Configuration for the TDOA localization cost-function figure."""
+    """Configuration for the DOA bearing residual figure."""
 
-    sensor_data: Path = "data/sensors.csv"
-    grid_extent_km: tuple[float, float, float, float] | None = None
-    grid_resolution: int = 300
-    query_point_km: tuple[float, float] | None = None
-    figsize: tuple[float, float] = (4.5, 4.5)
+    query_bearing_deg: float = 350.0
+    figsize: tuple[float, float] = (5.0, 2.0)
     output: Path = "reports/figures/tdoa/tdoa_sensitivity.png"
+
+
+class SNRComparisonConfig(BaseModel):
+    """Configuration for the SNR piling vs. quiet comparison figure."""
+
+    snr_file: Path = Path("reports/evaluation/snr_comparison.csv")
+    output: Path = Path("reports/figures/snr_comparison.png")
+
+
+class PRCurveConfig(BaseModel):
+    """Configuration for the precision-recall curve figure."""
+
+    pr_curve_data: Path = Path("reports/evaluation/pr_curve_data.csv")
+    output: Path = Path("reports/scirep/figure07.png")
 
 
 class PlottingConfig(BaseModel):
@@ -195,6 +203,8 @@ class PlottingConfig(BaseModel):
     correlation: CorrelationConfig | None = None
     dop: DOPConfig | None = None
     tdoa_sensitivity: TDOASensitivityConfig | None = None
+    snr_comparison: SNRComparisonConfig | None = None
+    pr_curve: PRCurveConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 

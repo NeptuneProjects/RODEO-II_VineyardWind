@@ -16,6 +16,7 @@ from matplotlib.ticker import FuncFormatter
 from numpy.typing import NDArray
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+import vineyard.readers as readers
 from vineyard.figures.common import add_panel_label, format_tick_scientific
 from vineyard.process_utils import (
     enforce_same_size,
@@ -23,7 +24,6 @@ from vineyard.process_utils import (
     get_anchor_trace,
     sample_delay,
 )
-import vineyard.readers as readers
 
 
 def plot_strike_template(
@@ -121,7 +121,7 @@ def plot_strike_template(
         # Validate strike index
         if strike_idx < 0 or strike_idx >= num_strikes:
             raise ValueError(
-                f"Strike index {strike_idx} out of range [0, {num_strikes-1}]"
+                f"Strike index {strike_idx} out of range [0, {num_strikes - 1}]"
             )
 
         # Determine window boundaries
@@ -282,7 +282,7 @@ def plot_template(
                 label="Reference",
                 linewidth=1.2,
             )
-            ytick_labels.append(f"Reference $p_i$")
+            ytick_labels.append("Reference $p_i$")
         else:
             if i < reference_ind:
                 label = f"$p_{{i - {np.abs(i - reference_ind)}}}$"

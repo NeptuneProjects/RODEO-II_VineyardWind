@@ -45,7 +45,8 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
     # Load calibration data
     data = np.loadtxt(cal_file, skiprows=1, delimiter=",")
     freq_cal = data[:, 0]
-    sensitivity_dB = data[:, 1] - 2.5
+    MANUFACTURER_CORRECTION = -2.5
+    sensitivity_dB = data[:, 1] + MANUFACTURER_CORRECTION
 
     # Convert sensitivity from dB re 1V/uPa to linear scale (V/uPa)
     sensitivity_linear = 10 ** (sensitivity_dB / 20)

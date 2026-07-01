@@ -129,7 +129,7 @@ def plot_signals(
         times=times,
         data=data,
         fs=fs,
-        col_title=f"Fin whale vocalizations and pile driving at VLA1",
+        col_title="Fin whale vocalizations and pile driving at site A",
         is_first_col=True,
         nperseg=nperseg,
         hop=hop,

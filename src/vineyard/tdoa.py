@@ -1,15 +1,15 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import piecewise_regression
 import polars as pl
 import pymap3d as pm
 from numpy.typing import ArrayLike, NDArray
 from pydantic import BaseModel
 from scipy.optimize import leastsq
+
+from vineyard.process import compute_sigma_tdoa_per_detection
 from vineyard.readers import (
     read_distances,
     read_sensor_positions,
@@ -47,15 +47,6 @@ class CorrelatedDetection:
         )
 
 
-class SmoothingRegionConfig(BaseModel):
-    """A time region over which to fit a piecewise linear bearing model."""
-
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    n_breakpoints: int = 6
-    breakpoints: list[float] | None = None
-
-
 class LocalizationConfig(BaseModel):
     """Configuration for TDOA estimation."""
 
@@ -65,44 +56,24 @@ class LocalizationConfig(BaseModel):
     tdoa_file: Path = "data/acoustic/tdoa/tdoa.csv"
     localization_file: Path = "data/acoustic/tdoa/localization.csv"
     raw_localization_file: Path = "data/acoustic/tdoa/localization_raw.csv"
-    range_file: Path = "data/acoustic/tdoa/range_estimates.csv"
     reference_site: str = "vla1"
     ambiguity_lower_bound: float = 90.0
     ambiguity_upper_bound: float = 270.0
-    dwdt_threshold: float = 0.25  # degrees per second
-    smoothing_window: int = 10
-    speed_upper_bound: float = 35.0  # km/h
-    smoothing_regions: list[SmoothingRegionConfig] = []
-
-
-def compute_angular_velocity(
-    df: pl.DataFrame, dwdt_threshold: float, smoothing_window: int
-) -> pl.DataFrame:
-    """Compute angular velocity from bearing changes over time.
-
-    Args:
-        df: DataFrame containing bearing columns (e.g., 'vla1_brg') and 'unix_time_us'.
-        dwdt_threshold: Threshold for angular velocity in degrees per second.
-        smoothing_window: Window size for smoothing angular velocity (number of calls).
-
-    Returns:
-        DataFrame with new column 'angular_velocity' representing the rate
-        of change of bearing in degrees per second. Values with absolute
-        angular velocity > dwdt_threshold deg/s are set to null (NaN).
-    """
-    return smooth_angular_velocity(
-        df.with_columns(
-            (df["vla1_brg"].diff() / (df["unix_time_us"].diff() / 1e6)).alias(
-                "angular_velocity"
-            )
-        ).with_columns(
-            pl.when(pl.col("angular_velocity").abs() > dwdt_threshold)
-            .then(None)
-            .otherwise(pl.col("angular_velocity"))
-            .alias("angular_velocity")
-        ),
-        smoothing_window,
-    )
+    # --- Bearing uncertainty (optional) ---
+    # Provide pc_data_path + template_duration_s + f_low_hz + f_high_hz to
+    # enable per-detection SNR-based σ_TDOA estimation.  Omit all to skip
+    # bearing uncertainty columns, or set var_tdoa (s²) for a constant fallback.
+    pc_data_path: Path | None = None
+    channel: int = 0
+    template_duration_s: float | None = None
+    f_low_hz: float | None = None
+    f_high_hz: float | None = None
+    filt_type: str | None = None
+    filt_freq: list[float] | float | None = None
+    snr_window_s: float = 5.0
+    noise_correction: str = "rayleigh"
+    var_tdoa: float | None = None  # constant TDOA variance fallback (s²) if pc_data_path not set
+    source_north: bool = True  # sources are north of the array (confirmed by external sensor)
 
 
 def compute_bearing(
@@ -157,76 +128,87 @@ def compute_time_gates(
     }
 
 
-def compute_whale_range(
-    angular_speed: ArrayLike | float, tangential_speed: float = 10.0
-) -> NDArray | float:
-    """Compute the whale range given angular speed and max tangential speed.
-
-    Args:
-        angular_speed: Angular speed in degrees per second.
-        tangential_speed: Tangential speed in km/h.
-
-    Returns:
-        Whale range in kilometers.
-    """
-    return (tangential_speed / 3600) / np.deg2rad(angular_speed)
-
-
 def correct_ambiguous_bearings(
-    df: pl.DataFrame, lower_bound: float, upper_bound: float
+    df: pl.DataFrame,
+    lower_bound: float,
+    upper_bound: float,
+    source_north: bool = False,
 ) -> pl.DataFrame:
-    """Correct ambiguous bearings in the DataFrame by reflecting them across
-    the specified bounds.
+    """Correct ambiguous bearings by reflecting them into the valid half-space.
+
+    The reflection formula for an E-W array is (180° − b) % 360°, which maps
+    each bearing to its mirror image across the array axis.
 
     Args:
         df: DataFrame containing bearing columns to correct.
-        lower_bound: Lower bound of the valid bearing range (e.g., 90 degrees).
-        upper_bound: Upper bound of the valid bearing range (e.g., 270 degrees).
+        lower_bound: Boundary at the eastern end of the array axis (e.g., 90°).
+        upper_bound: Boundary at the western end of the array axis (e.g., 270°).
+        source_north: If True, sources are north of the array; valid bearings
+            are outside (lower_bound, upper_bound) and south-half-space bearings
+            are reflected northward. If False (default), sources are south;
+            valid bearings are inside (lower_bound, upper_bound).
 
     Returns:
         DataFrame with corrected bearing columns.
     """
-    BEARING_COLUMNS = ["3dvha_brg", "vla1_brg", "vla2_brg"]
+    # Include doa_brg when present (far-field pipeline output)
+    BEARING_COLUMNS = [
+        c for c in ["doa_brg", "3dvha_brg", "vla1_brg", "vla2_brg"] if c in df.columns
+    ]
 
-    # Filter for unambiguous bearings (between lower_bound and upper_bound for all sensors)
-    unamb_bearings = df.filter(
-        (pl.col("3dvha_brg") > lower_bound)
-        & (pl.col("3dvha_brg") < upper_bound)
-        & (pl.col("vla1_brg") > lower_bound)
-        & (pl.col("vla1_brg") < upper_bound)
-        & (pl.col("vla2_brg") > lower_bound)
-        & (pl.col("vla2_brg") < upper_bound)
-    )
+    if source_north:
+        # Valid = north half-space: bearing < lower_bound or > upper_bound
+        # Ambiguous = south half-space: bearing in (lower_bound, upper_bound)
+        in_south = (
+            (pl.col("3dvha_brg") > lower_bound) & (pl.col("3dvha_brg") < upper_bound)
+        ) | (
+            (pl.col("vla1_brg") > lower_bound) & (pl.col("vla1_brg") < upper_bound)
+        ) | (
+            (pl.col("vla2_brg") > lower_bound) & (pl.col("vla2_brg") < upper_bound)
+        )
+        unamb_bearings = df.filter(~in_south)
+        amb_bearings = df.filter(in_south)
+        amb_bearings = amb_bearings.with_columns(
+            [
+                pl.when((pl.col(col) > lower_bound) & (pl.col(col) < upper_bound))
+                .then((180.0 - pl.col(col)) % 360.0)
+                .otherwise(pl.col(col))
+                .alias(col)
+                for col in BEARING_COLUMNS
+            ]
+        )
+    else:
+        # Valid = south half-space: bearing in (lower_bound, upper_bound)
+        # Ambiguous = north half-space: bearing < lower_bound or > upper_bound
+        unamb_bearings = df.filter(
+            (pl.col("3dvha_brg") > lower_bound)
+            & (pl.col("3dvha_brg") < upper_bound)
+            & (pl.col("vla1_brg") > lower_bound)
+            & (pl.col("vla1_brg") < upper_bound)
+            & (pl.col("vla2_brg") > lower_bound)
+            & (pl.col("vla2_brg") < upper_bound)
+        )
+        amb_bearings = df.filter(
+            (pl.col("3dvha_brg") < lower_bound)
+            | (pl.col("3dvha_brg") > upper_bound)
+            | (pl.col("vla1_brg") < lower_bound)
+            | (pl.col("vla1_brg") > upper_bound)
+            | (pl.col("vla2_brg") < lower_bound)
+            | (pl.col("vla2_brg") > upper_bound)
+        )
+        amb_bearings = amb_bearings.with_columns(
+            [
+                pl.when(pl.col(col) < lower_bound)
+                .then((2 * lower_bound - pl.col(col)) % 360)
+                .when(pl.col(col) > upper_bound)
+                .then((2 * upper_bound - pl.col(col)) % 360)
+                .otherwise(pl.col(col))
+                .alias(col)
+                for col in BEARING_COLUMNS
+            ]
+        )
 
-    # Filter for ambiguous bearings (outside lower_bound-upper_bound range for any sensor)
-    amb_bearings = df.filter(
-        (pl.col("3dvha_brg") < lower_bound)
-        | (pl.col("3dvha_brg") > upper_bound)
-        | (pl.col("vla1_brg") < lower_bound)
-        | (pl.col("vla1_brg") > upper_bound)
-        | (pl.col("vla2_brg") < lower_bound)
-        | (pl.col("vla2_brg") > upper_bound)
-    )
-    # breakpoint()
-    # Correct ambiguous bearings for all three columns
-    amb_bearings = amb_bearings.with_columns(
-        [
-            pl.when(pl.col(col) < lower_bound)
-            .then((2 * lower_bound - pl.col(col)) % 360)
-            .when(pl.col(col) > upper_bound)
-            .then((2 * upper_bound - pl.col(col)) % 360)
-            .otherwise(pl.col(col))
-            .alias(col)
-            for col in BEARING_COLUMNS
-        ]
-    )
-    # breakpoint()
-
-    return (
-        pl.concat([unamb_bearings, amb_bearings])
-        # .filter(pl.col("vla1_brg") < 175, pl.col("vla1_brg") > 155)
-        .sort("timestamp")
-    )
+    return pl.concat([unamb_bearings, amb_bearings]).sort("timestamp")
 
 
 def correlate_all_references(
@@ -301,7 +283,6 @@ def correlate_detections_triplet(
 
     # Iterate through reference site detections
     for ref_time in times[reference_site]:
-
         # Find matches at site A
         matches_a = find_matches_in_window(
             ref_time,
@@ -401,7 +382,7 @@ def correlate_detections_triplet_gated(
     - Discards any detection not confirmed at **all three** sites.
     - Assumes detections are spaced beyond the time gate, so at most one match
       per window is expected; the first candidate is taken.
-    - Still enforces the mutual A–B time-gate to guard against coincidental
+    - Still enforces the mutual A-B time-gate to guard against coincidental
       in-window matches at the two non-reference sites.
 
     Args:
@@ -561,27 +542,6 @@ def correlations_to_dataframe(
     ).with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
 
-def estimate_range(df: pl.DataFrame, tangential_speed: float = 35.0) -> pl.DataFrame:
-    """Estimate whale range from smoothed angular velocity.
-
-    Args:
-        df: DataFrame containing 'angular_velocity_smoothed' column.
-        tangential_speed: Maximum tangential speed of whale in km/h. Defaults to 35.0.
-
-    Returns:
-        DataFrame with new column 'whale_range_km' containing estimated range in kilometers.
-    """
-    ranges_max = compute_whale_range(
-        np.abs(df["slope_deg_s"].to_numpy()),
-        tangential_speed=tangential_speed,
-    )
-    ranges_25 = 0.25 * ranges_max
-    return df.with_columns(
-        pl.Series("whale_range_km", ranges_max).fill_nan(None).cast(pl.Float64),
-        pl.Series("whale_range_km_25pct", ranges_25).fill_nan(None).cast(pl.Float64),
-    )
-
-
 def estimate_tdoa_greedy(
     whale_call_data: Path, distance_lut: Path, reference_site: str
 ) -> pl.DataFrame:
@@ -678,110 +638,6 @@ def functions(x0, y0, x1, y1, x2, y2, d01, d02, d12):
     return fn
 
 
-def _estimate_velocity_and_range_in_region(
-    df: pl.DataFrame, estimation_params: SmoothingRegionConfig
-) -> pl.DataFrame:
-    start_time = estimation_params.start_time
-    end_time = estimation_params.end_time
-    n_breakpoints = estimation_params.n_breakpoints
-    breakpoints = estimation_params.breakpoints
-
-    df = df.filter(
-        (pl.col("timestamp") >= start_time) & (pl.col("timestamp") < end_time)
-    ).with_columns(
-        pl.col("unix_time_us")
-        .sub(pl.col("unix_time_us").min())
-        .mul(1e-6)
-        .cast(pl.Float64)
-        .alias("time_s")
-    )
-
-    pw_fit = piecewise_regression.Fit(
-        df["time_s"].to_numpy(),
-        df["vla1_brg"].to_numpy(),
-        n_breakpoints=n_breakpoints,
-        start_values=breakpoints,
-    )
-    pw_df = _parse_pwlr_results(pw_fit, df["time_s"].max())
-    return _format_pw_dataframe(pw_df, df), pw_fit
-
-
-def _format_pw_dataframe(df: pl.DataFrame, original_df: pl.DataFrame) -> pl.DataFrame:
-    ref_datetime = original_df["timestamp"].min()
-    ref_us = int(np.datetime64(ref_datetime, "us").view(np.int64))
-
-    df = df.with_columns(
-        (pl.lit(ref_us) + (pl.col("time_s") * 1e6).cast(pl.Int64))
-        .cast(pl.Datetime("us"))
-        .alias("timestamp"),
-        (pl.lit(ref_us) + (pl.col("start_s") * 1e6).cast(pl.Int64))
-        .cast(pl.Datetime("us"))
-        .alias("start_time"),
-        (pl.lit(ref_us) + (pl.col("stop_s") * 1e6).cast(pl.Int64))
-        .cast(pl.Datetime("us"))
-        .alias("stop_time"),
-    )
-    mean_bearing = (
-        df.join_where(
-            original_df.select(
-                pl.col("timestamp").alias("obs_timestamp"),
-                pl.col("vla1_brg"),
-            ),
-            pl.col("start_time") <= pl.col("obs_timestamp"),
-            pl.col("obs_timestamp") < pl.col("stop_time"),
-        )
-        .group_by("time_s")
-        .agg(pl.mean("vla1_brg").alias("mean_bearing"))
-    )
-    return df.join(mean_bearing, on="time_s", how="left")
-
-
-def _parse_pwlr_results(
-    pw_fit: piecewise_regression.Fit, reference_time: float
-) -> pl.DataFrame:
-    params = pw_fit.best_muggeo.best_fit.raw_params
-    alpha_hat = params[1]
-    beta_hats = params[2 : 2 + pw_fit.n_breakpoints]
-    slope = alpha_hat + np.cumsum(np.insert(beta_hats, 0, 0.0))
-
-    breakpoints = pw_fit.best_muggeo.best_fit.next_breakpoints
-    start = np.insert(breakpoints, 0, 0.0)
-    stop = np.append(breakpoints, reference_time)
-    time = np.mean(np.column_stack((start, stop)), axis=1)
-
-    x_pred = np.array([start, stop])
-    y_pred = params[0] + alpha_hat * x_pred
-    for beta, bp in zip(beta_hats, breakpoints):
-        y_pred += beta * np.maximum(x_pred - bp, 0)
-
-    constant = params[0] - np.cumsum(np.insert(beta_hats * breakpoints, 0, 0.0))
-
-    return pl.DataFrame(
-        {
-            "time_s": time,
-            "constant_deg": constant,
-            "slope_deg_s": slope,
-            "start_s": start,
-            "stop_s": stop,
-            "y0": y_pred[0],
-            "y1": y_pred[1],
-        }
-    )
-
-
-def estimate_velocity_and_range(
-    df: pl.DataFrame,
-    estimation_params: list[SmoothingRegionConfig],
-    speed_upper_bound: float,
-) -> pl.DataFrame:
-    dfs = []
-    for param in estimation_params:
-        pwdf, _ = _estimate_velocity_and_range_in_region(df, param)
-        dfs.append(pwdf)
-
-    return estimate_range(pl.concat(dfs), tangential_speed=speed_upper_bound)
-
-
 def localize(config: LocalizationConfig) -> None:
     """Run the full TDOA localization pipeline and save results to CSV.
 
@@ -792,39 +648,86 @@ def localize(config: LocalizationConfig) -> None:
     df = estimate_tdoa(
         config.whale_call_data, config.distance_lut, config.reference_site
     )
-    df = localize_tdoa_data(df, config.sensor_data)
+
+    var_tdoa: float | NDArray | pl.DataFrame | None = config.var_tdoa
+    if (
+        config.pc_data_path is not None
+        and config.template_duration_s is not None
+        and config.f_low_hz is not None
+        and config.f_high_hz is not None
+    ):
+        var_tdoa = compute_sigma_tdoa_per_detection(
+            df,
+            config.pc_data_path,
+            config.channel,
+            config.template_duration_s,
+            config.f_low_hz,
+            config.f_high_hz,
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
+            window_s=config.snr_window_s,
+            noise_correction=config.noise_correction,
+        )
+
+    df = localize_tdoa_data(df, config.sensor_data, var_tdoa=var_tdoa)
     df.write_csv(config.raw_localization_file)
     df = correct_ambiguous_bearings(
-        df, config.ambiguity_lower_bound, config.ambiguity_upper_bound
+        df,
+        config.ambiguity_lower_bound,
+        config.ambiguity_upper_bound,
+        source_north=config.source_north,
     )
-    # Remove outliers < 162 > 210 degrees for vla1_brg
-    df = df.filter((pl.col("vla1_brg") >= 162) & (pl.col("vla1_brg") <= 210))
     df.write_csv(config.localization_file)
 
-    df_vel_range = estimate_velocity_and_range(
-        df,
-        config.smoothing_regions,
-        config.speed_upper_bound,
-    )
-    df_vel_range = estimate_range(
-        df_vel_range,
-        config.speed_upper_bound,
-    )
-    df_vel_range.write_csv(config.range_file)
+
+def _bearing_uncertainty_deg(
+    target_x_km: float,
+    target_y_km: float,
+    sensor_x_km: float,
+    sensor_y_km: float,
+    C_pos: NDArray,
+) -> float:
+    """Propagate position covariance to 1-sigma bearing uncertainty (degrees).
+
+    Uses the gradient of atan2(Δe, Δn) with respect to target position (x, y).
+    C_pos must be in km², matching the km coordinate system used throughout.
+    """
+    delta_e = target_x_km - sensor_x_km
+    delta_n = target_y_km - sensor_y_km
+    r_sq = delta_e**2 + delta_n**2
+    if r_sq == 0.0:
+        return float("nan")
+    grad = np.array([delta_n / r_sq, -delta_e / r_sq])  # rad/km
+    return float(np.degrees(np.sqrt(grad @ C_pos @ grad)))
 
 
-def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
+def localize_tdoa_data(
+    df: pl.DataFrame,
+    sensor_data: Path,
+    var_tdoa: float | ArrayLike | pl.DataFrame | None = None,
+) -> pl.DataFrame:
     """Compute locations from TDOA data using least-squares localization.
 
     Args:
         df: DataFrame containing TDOA columns: timestamp, 3dvha, vla1, vla2.
         sensor_data: Path to the sensor positions CSV file.
+        var_tdoa: TDOA variance in seconds².  May be:
+            - None: bearing uncertainty columns are filled with NaN.
+            - float: one constant value applied to every detection.
+            - array-like of length len(df): per-detection TDOA variance values.
+              NaN entries produce NaN bearing uncertainty for that detection.
+            - pl.DataFrame: output of compute_sigma_tdoa_per_detection, with
+              columns sigma_t_3dvha, sigma_t_vla1, sigma_t_vla2, var_tdoa.
+              The combined var_tdoa column is used for covariance propagation;
+              all columns are appended to the output.
 
     Returns:
         DataFrame with original TDOA data plus computed location columns:
         easting (m), northing (m), latitude (degrees), longitude (degrees),
-        3dvha_brg, vla1_brg, and vla2_brg (true bearing from each sensor to
-        target, in degrees 0–360).
+        3dvha_brg, vla1_brg, vla2_brg (true bearing from each sensor to
+        target, in degrees 0–360), 3dvha_brg_unc, vla1_brg_unc, vla2_brg_unc
+        (1-sigma bearing uncertainty in degrees), and — when var_tdoa is a
+        DataFrame — sigma_t_3dvha, sigma_t_vla1, sigma_t_vla2, var_tdoa.
     """
     # Get sensor positions and reference coordinates
     sensor_eastings, sensor_northings, lat0, lon0 = read_sensor_positions(sensor_data)
@@ -836,6 +739,23 @@ def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
 
     # Sound speed in water (m/s converted to km/s)
     speed = 1500.0 / denom
+
+    # When var_tdoa is a DataFrame, extract the combined column for covariance
+    # propagation and stash the full DataFrame to append to the output.
+    sigma_data_df: pl.DataFrame | None = None
+    if isinstance(var_tdoa, pl.DataFrame):
+        sigma_data_df = var_tdoa
+        var_tdoa = sigma_data_df["var_tdoa"].to_numpy()
+
+    # Normalise var_tdoa to a list for uniform per-row access.
+    n_rows = len(df)
+    if var_tdoa is None:
+        var_tdoa_list: list[float | None] = [None] * n_rows
+    elif isinstance(var_tdoa, (int, float)):
+        var_tdoa_list = [float(var_tdoa)] * n_rows
+    else:
+        arr = np.asarray(var_tdoa, dtype=float)
+        var_tdoa_list = [None if np.isnan(v) else float(v) for v in arr]
 
     # Initial guess at centroid of sensors
     xp = np.mean(sensor_eastings_km)
@@ -849,15 +769,18 @@ def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
     bearings_3dvha = []
     bearings_vla1 = []
     bearings_vla2 = []
+    unc_3dvha = []
+    unc_vla1 = []
+    unc_vla2 = []
 
-    for row in df.iter_rows(named=True):
+    for i, row in enumerate(df.iter_rows(named=True)):
         # Extract TDOA values (in seconds)
         t0 = row["3dvha"]
         t1 = row["vla1"]
         t2 = row["vla2"]
 
         # Solve TDOA localization
-        x_km, y_km, _ = tdoa_solve(
+        x_km, y_km, _, cov_x = tdoa_solve(
             sensor_eastings_km,
             sensor_northings_km,
             [t0, t1, t2],
@@ -884,6 +807,23 @@ def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
             sensor_eastings[2], sensor_northings[2], easting_m, northing_m
         )
 
+        # Propagate TDOA variance to bearing uncertainty for each sensor
+        row_var = var_tdoa_list[i]
+        if row_var is not None and cov_x is not None:
+            var_d_km = speed**2 * row_var  # range-difference variance (km²)
+            C_pos = cov_x * var_d_km  # position covariance (km²)
+            u3 = _bearing_uncertainty_deg(
+                x_km, y_km, sensor_eastings_km[0], sensor_northings_km[0], C_pos
+            )
+            u1 = _bearing_uncertainty_deg(
+                x_km, y_km, sensor_eastings_km[1], sensor_northings_km[1], C_pos
+            )
+            u2 = _bearing_uncertainty_deg(
+                x_km, y_km, sensor_eastings_km[2], sensor_northings_km[2], C_pos
+            )
+        else:
+            u3 = u1 = u2 = float("nan")
+
         eastings.append(easting_m)
         northings.append(northing_m)
         latitudes.append(lat)
@@ -891,8 +831,11 @@ def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
         bearings_3dvha.append(brg_3dvha)
         bearings_vla1.append(brg_vla1)
         bearings_vla2.append(brg_vla2)
+        unc_3dvha.append(u3)
+        unc_vla1.append(u1)
+        unc_vla2.append(u2)
 
-    return df.with_columns(
+    result = df.with_columns(
         [
             pl.Series("easting", eastings),
             pl.Series("northing", northings),
@@ -901,8 +844,14 @@ def localize_tdoa_data(df: pl.DataFrame, sensor_data: Path) -> pl.DataFrame:
             pl.Series("3dvha_brg", bearings_3dvha),
             pl.Series("vla1_brg", bearings_vla1),
             pl.Series("vla2_brg", bearings_vla2),
+            pl.Series("3dvha_brg_unc", unc_3dvha),
+            pl.Series("vla1_brg_unc", unc_vla1),
+            pl.Series("vla2_brg_unc", unc_vla2),
         ]
     )
+    if sigma_data_df is not None:
+        result = result.with_columns(sigma_data_df.get_columns())
+    return result
 
 
 def jacobian(x0, y0, x1, y1, x2, y2, d01, d02, d12):
@@ -1034,24 +983,7 @@ def merge_correlations(
     return complete_triplets
 
 
-def smooth_angular_velocity(df: pl.DataFrame, window_size: int = 5) -> pl.DataFrame:
-    """Smooth angular velocity using a rolling mean.
-
-    Args:
-        df: DataFrame containing 'angular_velocity' column.
-        window_size: Size of the rolling window. Defaults to 5.
-
-    Returns:
-        DataFrame with new column 'angular_velocity_smoothed' containing the smoothed values.
-    """
-    return df.with_columns(
-        pl.col("angular_velocity")
-        .rolling_mean(window_size)
-        .alias("angular_velocity_smoothed")
-    )
-
-
-def tdoa_solve(x, y, t, speed, xp, yp) -> tuple[float, float, Callable]:
+def tdoa_solve(x, y, t, speed, xp, yp) -> tuple[float, float, Callable, NDArray | None]:
     x0, y0, t0 = x[0], y[0], t[0]
     x1, y1, t1 = x[1], y[1], t[1]
     x2, y2, t2 = x[2], y[2], t[2]
@@ -1063,5 +995,5 @@ def tdoa_solve(x, y, t, speed, xp, yp) -> tuple[float, float, Callable]:
         x0, y0, x1, y1, x2, y2, (t1 - t0) * speed, (t2 - t0) * speed, (t2 - t1) * speed
     )
 
-    pos, _ = leastsq(F, x0=[xp, yp], Dfun=J)
-    return pos[0], pos[1], F
+    pos, cov_x, *_ = leastsq(F, x0=[xp, yp], Dfun=J, full_output=True)
+    return pos[0], pos[1], F, cov_x

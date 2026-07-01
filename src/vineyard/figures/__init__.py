@@ -21,12 +21,15 @@ Public API:
 import logging
 
 import matplotlib.pyplot as plt
+import polars as pl
 
 from vineyard.figures.common import (
     DOPConfig,
-    WhaleTrackingConfig,
     PlottingConfig,
+    PRCurveConfig,
+    SNRComparisonConfig,
     TDOASensitivityConfig,
+    WhaleTrackingConfig,
     add_panel_label,
     save_and_show_figure,
 )
@@ -34,19 +37,27 @@ from vineyard.figures.corr import plot_correlations
 from vineyard.figures.denoise import plot_denoising
 from vineyard.figures.dop import plot_dop
 from vineyard.figures.experiment import plot_experiment_setup
+from vineyard.figures.pr_curve import plot_pr_curve
 from vineyard.figures.signals import plot_signals
+from vineyard.figures.snr import plot_snr_comparison
+from vineyard.figures.tdoa_results import plot_whale_data
 from vineyard.figures.tdoa_sensitivity import plot_tdoa_sensitivity
 from vineyard.figures.templates import plot_strike_template
-from vineyard.figures.whale import plot_whale_tracking
 
 __all__ = [
     # Common utilities
     "DOPConfig",
     "PlottingConfig",
+    "SNRComparisonConfig",
     "TDOASensitivityConfig",
     "WhaleTrackingConfig",
     "add_panel_label",
     "save_and_show_figure",
+    # SNR figure
+    "plot_snr_comparison",
+    # PR curve figure
+    "PRCurveConfig",
+    "plot_pr_curve",
     # Map figures
     "create_map_panels",
     # Signal figures
@@ -57,6 +68,8 @@ __all__ = [
     "plot_dop",
     # TDOA sensitivity figure
     "plot_tdoa_sensitivity",
+    # Whale tracking figure
+    "plot_whale_data",
     # Orchestration
     "make_figures",
 ]
@@ -213,10 +226,7 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
         logging.info("Creating TDOA sensitivity figure...")
         ts = config.tdoa_sensitivity
         fig = plot_tdoa_sensitivity(
-            sensor_data=ts.sensor_data,
-            grid_extent_km=ts.grid_extent_km,
-            grid_resolution=ts.grid_resolution,
-            query_point_km=ts.query_point_km,
+            query_bearing_deg=ts.query_bearing_deg,
             figsize=ts.figsize,
         )
         save_and_show_figure(
@@ -227,15 +237,36 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
         )
         logging.info(f"TDOA sensitivity figure saved to {ts.output}")
 
+    if config.snr_comparison is not None:
+        logging.info("Creating SNR comparison figure...")
+        fig = plot_snr_comparison(snr_file=config.snr_comparison.snr_file)
+        save_and_show_figure(
+            fig,
+            config.snr_comparison.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"SNR comparison figure saved to {config.snr_comparison.output}")
+
+    if config.pr_curve is not None:
+        logging.info("Creating PR curve figure...")
+        fig = plot_pr_curve(pr_curve_data=config.pr_curve.pr_curve_data)
+        save_and_show_figure(
+            fig,
+            config.pr_curve.output,
+            show=show,
+            savefig_kwargs=config.savefig_kwargs,
+        )
+        logging.info(f"PR curve figure saved to {config.pr_curve.output}")
+
     if config.whale_tracking is not None:
         logging.info("Creating whale tracking figure...")
-        fig = plot_whale_tracking(
-            bathy_data=config.whale_tracking.bathy_data,
-            sensor_data=config.whale_tracking.sensor_data,
-            turbine_data=config.whale_tracking.turbine_data,
-            whale_bearings=config.whale_tracking.whale_bearings,
-            whale_ranges=config.whale_tracking.whale_ranges,
-            time_ranges=config.whale_tracking.time_ranges,
+        whale_df = pl.read_csv(config.whale_tracking.whale_data, try_parse_dates=True)
+        fig = plot_whale_data(
+            whale_df=whale_df,
+            time_ranges=config.whale_tracking.time_ranges or [],
+            brg_ylim=config.whale_tracking.brg_ylim,
+            brg_ref=config.whale_tracking.brg_ref,
         )
         save_and_show_figure(
             fig,

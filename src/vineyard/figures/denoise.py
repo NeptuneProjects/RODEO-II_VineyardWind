@@ -92,16 +92,20 @@ def plot_denoising_freq(
     subfig: plt.Figure | None = None,
 ) -> plt.Figure:
     fs = ds.stats.sampling_rate
-    STFT = ShortTimeFFT(fs=fs, hop=hop, mfft=nperseg, win=get_window(window, nperseg))
+    STFT = ShortTimeFFT(
+        fs=fs, hop=hop, mfft=nperseg, win=get_window(window, nperseg), scale_to="psd"
+    )
     freq = STFT.f
     df = freq[1] - freq[0]
 
     Zxx_orig = STFT.spectrogram(ds.data[0])
     Zxx_orig[Zxx_orig == 0] = 1e-12
-    Zxx_orig_db = 10 * np.log10(np.abs(Zxx_orig))
+    Zxx_orig_db = 10 * np.log10(Zxx_orig)
+
     Zxx_filt = STFT.spectrogram(ds.data[1])
     Zxx_filt[Zxx_filt == 0] = 1e-12
-    Zxx_filt_db = 10 * np.log10(np.abs(Zxx_filt))
+
+    Zxx_filt_db = 10 * np.log10(Zxx_filt)
     Zxx_diff_db = Zxx_filt_db - Zxx_orig_db
 
     if flim is not None:
@@ -119,16 +123,16 @@ def plot_denoising_freq(
         {
             "data": Zxx_orig_db,
             "title": "Original signal",
-            "vmin": 160,
-            "vmax": 220,
+            "vmin": 80,
+            "vmax": 140,
             "cmap": "inferno",
             "cblabel": "PSD (dB re 1 μPa²/Hz)",
         },
         {
             "data": Zxx_filt_db,
             "title": "Denoised signal",
-            "vmin": 160,
-            "vmax": 220,
+            "vmin": 80,
+            "vmax": 140,
             "cmap": "inferno",
             "cblabel": "PSD (dB re 1 μPa²/Hz)",
         },
@@ -241,7 +245,7 @@ def plot_denoising_time(
             "ylim": (0, 2.1),
             "title": "Matched filter output with denoised signal",
             "color": "tab:green",
-            "threshold": 0.4,
+            "threshold": 0.27,
             "distance": 7.0,
         },
     ]

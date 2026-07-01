@@ -53,10 +53,30 @@ The individual steps of the workflow can be run using the following commands:
    `workflow etl`
 2. Run all data processing steps:  
    `workflow process`
-3. Run the localization step:  
+3. Run only the whale call detection step:  
+   `workflow detect`
+4. Run the localization step:  
    `workflow localize`
-4. Run the plotting step:  
+5. Run detection performance evaluation:  
+   `workflow evaluate`
+6. Run the plotting step:  
    `workflow plot`
+
+## Evaluation
+
+### Detection metrics
+
+`workflow evaluate` matches detections to manual annotations, computes per-sensor and pooled precision/recall/F1, and reports event-level detection rates. Results are written to `reports/evaluation/`.
+
+### PR curve sweep
+
+To calibrate detection thresholds, a full threshold sweep can be run against the pulse-compressed HDF5 data:
+
+```bash
+workflow evaluate --prsweep
+```
+
+This sweeps 40 threshold values for both the denoised and raw channels, matches each against piling-condition annotations, and writes per-sensor TP/FP/FN counts to `reports/evaluation/pr_curve_data.csv`. The sweep is computationally expensive (loads full HDF5 files into memory) and only needs to be run once; the resulting CSV is then used by `workflow plot` to generate the PR curve figure.
 
 ## Acknowledgements
 
