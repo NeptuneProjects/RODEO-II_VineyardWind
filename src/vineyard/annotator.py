@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Interactive acoustic data annotator built with Dash.
 
 Run via console script:
