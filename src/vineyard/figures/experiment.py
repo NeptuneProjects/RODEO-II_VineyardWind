@@ -1,3 +1,7 @@
+"""Create a two-panel map figure showing the experimental setup for the
+Vineyard Wind project.
+"""
+
 from collections.abc import Sequence
 from pathlib import Path
 

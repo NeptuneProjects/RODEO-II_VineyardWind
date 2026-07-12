@@ -1,8 +1,4 @@
-"""Template construction figure creation.
-
-This module provides functionality for creating template construction figures
-that show how templates are built from aligned traces in a rolling window.
-"""
+"""Signal template construction figure creation."""
 
 import logging
 from collections.abc import Sequence
@@ -60,12 +56,14 @@ def plot_strike_template(
         buffer_start: Buffer before the strike peak (seconds).
         buffer_end: Buffer after the strike peak (seconds).
         window_size: Size of the rolling window.
-        output_dir: Directory to save the plot.
         ylim: Optional y-axis limits.
         taper_pc: Taper percentage for data processing.
         dec_factor: Decimation factor for data processing.
         filt_type: Filter type for data processing.
         filt_freq: Filter frequency for data processing.
+
+    Returns:
+        Matplotlib Figure.
     """
     # Read the acoustic data
     logging.info(f"Reading acoustic data for {sensor_name}...")

@@ -1,3 +1,7 @@
+"""Plot time series and spectrograms for whale vocalizations and
+pile-driving strikes.
+"""
+
 from pathlib import Path
 
 import matplotlib.pyplot as plt

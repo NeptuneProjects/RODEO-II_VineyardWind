@@ -1,9 +1,4 @@
-"""DOA bearing residual figure.
-
-Single-panel figure showing the normalized DOA residual (dB) as a function
-of trial bearing for a simulated far-field source, illustrating the
-north-south ambiguity of the east-west linear array.
-"""
+"""DOA bearing residual figure."""
 
 import matplotlib.pyplot as plt
 import numpy as np

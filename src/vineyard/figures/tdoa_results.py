@@ -1,6 +1,7 @@
-"""Plot whale tracking results."""
+"""Plot whale DOA estimation results."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 import matplotlib
 import matplotlib.dates as mdates
@@ -19,11 +20,13 @@ colorbar_cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
 
 
 def plot_whale_data(
-    whale_df: pl.DataFrame,
+    whale_data: Path,
     time_ranges: Sequence[tuple[np.datetime64, np.datetime64]],
     brg_ylim: tuple[float, float] | None = None,
     brg_ref: float | None = None,
 ) -> Figure:
+    whale_df = pl.read_csv(whale_data, try_parse_dates=True)
+
     site_a_color = "tab:blue"
     site_b_color = "tab:orange"
     site_c_color = "tab:green"
