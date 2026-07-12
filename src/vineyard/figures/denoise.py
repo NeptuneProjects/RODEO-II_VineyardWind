@@ -1,3 +1,5 @@
+"""Plot denoising results for acoustic signals."""
+
 from collections.abc import Sequence
 from pathlib import Path
 
