@@ -1,3 +1,5 @@
+"""Plot correlation coefficients between pairs of pile-driving strikes."""
+
 import string
 from pathlib import Path
 
@@ -83,7 +85,6 @@ def _plot_corr(
     window: float = 300.0,
     strike_window_size: int | None = None,
 ) -> Figure:
-    # TODO: Once manuscript is ready, update y-axis label to math notation.
     fig, axes = plt.subplots(
         figsize=(6.5, 3.75),
         nrows=2,
@@ -194,6 +195,7 @@ def plot_correlations(
     Args:
         corr_file: Path to the HDF5 file containing correlation data.
         window: Time window in seconds for plotting correlations.
+        strike_window_size: Optional size of the strike window in number of strikes.
 
     Returns:
         A matplotlib Figure object containing the correlation plot.
