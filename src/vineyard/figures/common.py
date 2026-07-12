@@ -152,6 +152,10 @@ class TemplateConstructionConfig(BaseModel):
     filt_type: str | None = None
     filt_freq: float | list[float] | None = None
 
+    @property
+    def output(self) -> Path:
+        return self.output_dir / f"{self.sensor_name}_template_construction.png"
+
 
 class DOPConfig(BaseModel):
     """Configuration for the geometric dilution of precision (GDOP) figure."""
