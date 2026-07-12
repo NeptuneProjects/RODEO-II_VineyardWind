@@ -25,18 +25,21 @@ def plot_tdoa_sensitivity(
     """
     c = 1.5  # km/s
 
-    # ‖g‖² is a constant that cancels in normalization; only sₑ matters
+    # A constant geometry factor common to every term cancels once residuals
+    # are normalized by their maximum; only s_e_trial matters here.
     s_e_true = -np.sin(np.radians(query_bearing_deg)) / c
 
-    # Axis centered on North: bearings run −180° … 0° (N) … +180°
-    # Shift formula: bearing > 180° maps to bearing − 360°
+    # Axis centered on North: bearings run from -180 degrees through 0 degrees
+    # (N) to +180 degrees.
+    # Shift formula: bearing > 180 degrees maps to bearing - 360 degrees.
     bearings = np.linspace(-180.0, 180.0, 7201)
     s_e_trial = -np.sin(np.radians(bearings)) / c
     residuals = (s_e_trial - s_e_true) ** 2
     residuals /= residuals.max()
     residuals_db = 10.0 * np.log10(np.maximum(residuals, 1e-6))
 
-    # Mirror bearing: sin(θ_mirror) = sin(θ_true) ⟹ θ_mirror = 180° − θ_true
+    # Mirror bearing: sin(theta_mirror_deg) = sin(query_bearing_deg) implies
+    # theta_mirror_deg = 180 degrees - query_bearing_deg
     theta_mirror_deg = (180.0 - query_bearing_deg) % 360.0
 
     # Convert true and mirror bearings to centered coordinates
@@ -50,7 +53,8 @@ def plot_tdoa_sensitivity(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Shade the southern half-space (excluded by geographic prior).
-    # In the centered axis, south half-space [90°, 270°] → [90°, 180°] and [−180°, −90°].
+    # In the centered axis, south half-space [90, 270] degrees maps to
+    # [90, 180] degrees and [-180, -90] degrees.
     ax.axvspan(
         -180.0,
         -90.0,

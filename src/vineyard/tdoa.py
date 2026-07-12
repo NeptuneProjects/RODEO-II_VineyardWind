@@ -1,3 +1,5 @@
+"""TDOA (Time Difference of Arrival) estimation utilities."""
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +50,13 @@ class CorrelatedDetection:
 
 
 class LocalizationConfig(BaseModel):
-    """Configuration for TDOA estimation."""
+    """Configuration for TDOA estimation.
+
+    If pc_data_path is provided, per-detection TDOA uncertainty is computed
+    from the SNR of the detection.  Otherwise, a constant var_tdoa (seconds
+    squared) may be provided as a fallback.  If neither is provided, bearing
+    uncertainty columns are filled with NaN.
+    """
 
     whale_call_data: Path = "data/acoustic/whale_detections.csv"
     distance_lut: Path = "data/distances.csv"
@@ -59,10 +67,6 @@ class LocalizationConfig(BaseModel):
     reference_site: str = "vla1"
     ambiguity_lower_bound: float = 90.0
     ambiguity_upper_bound: float = 270.0
-    # --- Bearing uncertainty (optional) ---
-    # Provide pc_data_path + template_duration_s + f_low_hz + f_high_hz to
-    # enable per-detection SNR-based σ_TDOA estimation.  Omit all to skip
-    # bearing uncertainty columns, or set var_tdoa (s²) for a constant fallback.
     pc_data_path: Path | None = None
     channel: int = 0
     template_duration_s: float | None = None
@@ -72,8 +76,8 @@ class LocalizationConfig(BaseModel):
     filt_freq: list[float] | float | None = None
     snr_window_s: float = 5.0
     noise_correction: str = "rayleigh"
-    var_tdoa: float | None = None  # constant TDOA variance fallback (s²) if pc_data_path not set
-    source_north: bool = True  # sources are north of the array (confirmed by external sensor)
+    var_tdoa: float | None = None
+    source_north: bool = True
 
 
 def compute_bearing(
@@ -136,13 +140,13 @@ def correct_ambiguous_bearings(
 ) -> pl.DataFrame:
     """Correct ambiguous bearings by reflecting them into the valid half-space.
 
-    The reflection formula for an E-W array is (180° − b) % 360°, which maps
-    each bearing to its mirror image across the array axis.
+    The reflection formula for an E-W array is (180 degrees - bearing) % 360
+    degrees, which maps each bearing to its mirror image across the array axis.
 
     Args:
         df: DataFrame containing bearing columns to correct.
-        lower_bound: Boundary at the eastern end of the array axis (e.g., 90°).
-        upper_bound: Boundary at the western end of the array axis (e.g., 270°).
+        lower_bound: Boundary at the eastern end of the array axis (e.g., 90 degrees).
+        upper_bound: Boundary at the western end of the array axis (e.g., 270 degrees).
         source_north: If True, sources are north of the array; valid bearings
             are outside (lower_bound, upper_bound) and south-half-space bearings
             are reflected northward. If False (default), sources are south;
@@ -160,11 +164,9 @@ def correct_ambiguous_bearings(
         # Valid = north half-space: bearing < lower_bound or > upper_bound
         # Ambiguous = south half-space: bearing in (lower_bound, upper_bound)
         in_south = (
-            (pl.col("3dvha_brg") > lower_bound) & (pl.col("3dvha_brg") < upper_bound)
-        ) | (
-            (pl.col("vla1_brg") > lower_bound) & (pl.col("vla1_brg") < upper_bound)
-        ) | (
-            (pl.col("vla2_brg") > lower_bound) & (pl.col("vla2_brg") < upper_bound)
+            ((pl.col("3dvha_brg") > lower_bound) & (pl.col("3dvha_brg") < upper_bound))
+            | ((pl.col("vla1_brg") > lower_bound) & (pl.col("vla1_brg") < upper_bound))
+            | ((pl.col("vla2_brg") > lower_bound) & (pl.col("vla2_brg") < upper_bound))
         )
         unamb_bearings = df.filter(~in_south)
         amb_bearings = df.filter(in_south)
@@ -453,9 +455,9 @@ def estimate_tdoa(
     reference_site: str,
 ) -> pl.DataFrame:
     """Estimate TDOA requiring detections at all three sites, anchored on
-    ``reference_site``.
+    `reference_site`.
 
-    This is a simplified alternative to ``estimate_tdoa``: it uses a single
+    This is a simplified alternative to `estimate_tdoa`: it uses a single
     reference site as a mandatory gate, discards partial detections, and
     skips the multi-reference voting / merge step.
 
@@ -463,7 +465,7 @@ def estimate_tdoa(
         whale_call_data: Path to whale call detection times.
         distance_lut: Path to distance lookup table.
         reference_site: Site that must have a detection for a triplet to be
-            kept (e.g. ``'vla2'``).
+            kept (e.g. 'vla2').
 
     Returns:
         DataFrame with correlated triplets and TDOA values.
@@ -689,8 +691,9 @@ def _bearing_uncertainty_deg(
 ) -> float:
     """Propagate position covariance to 1-sigma bearing uncertainty (degrees).
 
-    Uses the gradient of atan2(Δe, Δn) with respect to target position (x, y).
-    C_pos must be in km², matching the km coordinate system used throughout.
+    Uses the gradient of atan2(delta_e, delta_n) with respect to target position (x, y).
+    C_pos must be in km squared, matching the km coordinate system used
+    throughout.
     """
     delta_e = target_x_km - sensor_x_km
     delta_n = target_y_km - sensor_y_km
@@ -711,7 +714,7 @@ def localize_tdoa_data(
     Args:
         df: DataFrame containing TDOA columns: timestamp, 3dvha, vla1, vla2.
         sensor_data: Path to the sensor positions CSV file.
-        var_tdoa: TDOA variance in seconds².  May be:
+        var_tdoa: TDOA variance in seconds squared.  May be:
             - None: bearing uncertainty columns are filled with NaN.
             - float: one constant value applied to every detection.
             - array-like of length len(df): per-detection TDOA variance values.
@@ -810,8 +813,8 @@ def localize_tdoa_data(
         # Propagate TDOA variance to bearing uncertainty for each sensor
         row_var = var_tdoa_list[i]
         if row_var is not None and cov_x is not None:
-            var_d_km = speed**2 * row_var  # range-difference variance (km²)
-            C_pos = cov_x * var_d_km  # position covariance (km²)
+            var_d_km = speed**2 * row_var  # range-difference variance (km squared)
+            C_pos = cov_x * var_d_km  # position covariance (km squared)
             u3 = _bearing_uncertainty_deg(
                 x_km, y_km, sensor_eastings_km[0], sensor_northings_km[0], C_pos
             )

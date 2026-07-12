@@ -3,33 +3,34 @@
 Replaces the near-field hyperbolic optimizer in tdoa.py with a direct
 linear least-squares solution for the plane-wave slowness vector.
 
-For a plane wave arriving from bearing θ (clockwise from North), the
-arrival time at sensor i is:
+For a plane wave arriving from bearing "bearing" (clockwise from North),
+the arrival time at sensor i is:
 
-    tᵢ = t₀ + pᵢ · s
+    arrival_time_i = t0 + sensor_position_i * s
 
-where s = k̂/c is the slowness vector (k̂ points from source toward array).
-The TDOA between sensor pairs is linear in s:
+where s = direction_vector / speed is the slowness vector (direction_vector
+points from source toward array). The TDOA between sensor pairs is linear
+in s:
 
-    τᵢⱼ = (pᵢ − pⱼ) · s
+    tdoa_ij = (sensor_position_i - sensor_position_j) * s
 
 This array is arranged nearly east-west (N-S baselines are O(m) vs O(km)
 E-W baselines), making the full 2D system rank-deficient in the N-S
 direction. Only the east-west component of slowness is reliably observable:
 
-    Δeᵢⱼ sₑ ≈ τᵢⱼ   (1-D lstsq, eastings only)
+    delta_e_ij * s_e ~= tdoa_ij   (1-D lstsq, eastings only)
 
-The N-S component is then recovered from the physical constraint |s| = 1/c:
+The N-S component is then recovered from the physical constraint |s| = 1/speed:
 
-    sₙ = ±sqrt(1/c² − sₑ²)
+    s_n = +/- sqrt(1 / speed**2 - s_e**2)
 
 with the sign chosen by a half-space prior on source location (sources are
-north of the array, so sₙ < 0 — the wave propagates southward).
+north of the array, so s_n < 0 -- the wave propagates southward).
 
 Bearing and uncertainty follow:
 
-    θ = atan2(−sₑ, −sₙ)      [degrees, clockwise from North]
-    σ_θ = σ_τ / (|sₙ| √(Σ Δeᵢⱼ²))   [radians; convert to degrees]
+    bearing = atan2(-s_e, -s_n)      [degrees, clockwise from North]
+    sigma_bearing = sigma_tdoa / (abs(s_n) * sqrt(sum_sq_e))   [radians; convert to degrees]
 """
 
 from pathlib import Path
@@ -52,8 +53,8 @@ def doa_solve(
     """Solve for far-field DOA from TDOA measurements using a 1-D lstsq.
 
     The N-S sensor baselines in this array are O(m) vs O(km) E-W, making
-    the 2-D system ill-conditioned. Only sₑ is solved from data; sₙ is
-    recovered from the sound-speed constraint |s| = 1/c.
+    the 2-D system ill-conditioned. Only s_e is solved from data; s_n is
+    recovered from the sound-speed constraint |s| = 1/speed.
 
     Parameters
     ----------
@@ -64,8 +65,9 @@ def doa_solve(
     speed :
         Sound speed in km/s (typically 1.5).
     source_south :
-        If True, source is south of the array (sₙ > 0). If False (default),
-        source is north of the array, so the wave propagates southward and sₙ < 0.
+        If True, source is south of the array (s_n > 0). If False (default),
+        source is north of the array, so the wave propagates southward and
+        s_n < 0.
 
     Returns
     -------
@@ -76,7 +78,8 @@ def doa_solve(
     s_n :
         North component of slowness vector (s/km).
     sum_sq_e :
-        Σ Δeᵢⱼ² over unique pairs (km²); used for uncertainty propagation.
+        Sum of delta_e**2 over unique sensor pairs (km**2); used for
+        uncertainty propagation.
     """
     n = len(sensor_eastings)
     delta_e: list[float] = []
@@ -89,11 +92,11 @@ def doa_solve(
     de = np.array(delta_e)
     dt = np.array(delta_tau)
 
-    # 1-D lstsq: sₑ = (Σ Δeᵢⱼ τᵢⱼ) / (Σ Δeᵢⱼ²)
+    # 1-D lstsq: s_e = sum(delta_e * delta_tau) / sum(delta_e**2)
     sum_sq_e = float(de @ de)
     s_e = float(de @ dt) / sum_sq_e
 
-    # Recover sₙ from |s| = 1/c; clamp s_e to the physical range first
+    # Recover s_n from |s| = 1/speed; clamp s_e to the physical range first
     s_e_clamped = float(np.clip(s_e, -1.0 / speed, 1.0 / speed))
     s_n_mag = float(np.sqrt(max(0.0, (1.0 / speed) ** 2 - s_e_clamped**2)))
     s_n = s_n_mag if source_south else -s_n_mag
@@ -109,9 +112,10 @@ def _bearing_uncertainty_deg(
 ) -> float:
     """Propagate TDOA variance to 1-sigma DOA bearing uncertainty (degrees).
 
-    With sₙ fixed by the sound-speed constraint, ∂θ/∂sₑ = 1/sₙ, giving:
+    With s_n fixed by the sound-speed constraint, d(bearing)/d(s_e) = 1/s_n,
+    giving:
 
-        σ_θ = σ_τ / (|sₙ| √(Σ Δeᵢⱼ²))   [radians]
+        sigma_bearing = sigma_tdoa / (abs(s_n) * sqrt(sum_sq_e))   [radians]
     """
     if s_n == 0.0 or sum_sq_e == 0.0:
         return float("nan")
@@ -135,7 +139,7 @@ def localize_doa_data(
     sensor_data :
         Path to sensor positions CSV.
     var_tdoa :
-        TDOA variance in seconds². Accepts the same shapes as
+        TDOA variance in seconds squared. Accepts the same shapes as
         localize_tdoa_data in tdoa.py: None, scalar float, array-like of
         length len(df), or a pl.DataFrame from
         compute_sigma_tdoa_per_detection.
@@ -155,7 +159,7 @@ def localize_doa_data(
     """
     sensor_eastings, _, _, _ = read_sensor_positions(sensor_data)
 
-    # Convert m → km for numerical stability (matching tdoa.py convention)
+    # Convert m to km for numerical stability (matching tdoa.py convention)
     denom = 1000.0
     speed_km_s = 1500.0 / denom  # km/s
     e_km = [e / denom for e in sensor_eastings]

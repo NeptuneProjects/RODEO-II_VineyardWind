@@ -35,8 +35,9 @@ def plot_whale_data(
     formatter = mdates.ConciseDateFormatter(locator, offset_formats=["%Y-%b-%d"] * 6)
 
     time = whale_df["timestamp"].to_numpy()
-    # Center bearings on North: map (180°, 360°] → (−180°, 0°] so north-facing
-    # bearings cluster around 0 instead of wrapping across the 0°/360° boundary.
+    # Center bearings on North: map (180 to 360 degrees] to (-180 to 0 degrees]
+    # so north-facing bearings cluster around 0 instead of wrapping across the
+    # 0/360 degree boundary.
     brg_mean = ((whale_df["doa_brg"].to_numpy() + 180.0) % 360.0) - 180.0
     brg_unc = whale_df["doa_brg_unc"].to_numpy()
     snr_a = whale_df["snr_p_db_3dvha"].to_numpy()
@@ -68,7 +69,7 @@ def plot_whale_data(
         ax0.axhline(
             brg_ref_centered, color="k", linestyle="--", linewidth=0.75, zorder=5
         )
-    # Tick labels show actual compass bearings (e.g. −30 → "330°")
+    # Tick labels show actual compass bearings (e.g. -30 becomes "330 degrees")
     ax0.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v % 360:.0f}°"))
     ax0.set_ylabel("DOA (°T)")
     add_panel_label(ax0, "a")

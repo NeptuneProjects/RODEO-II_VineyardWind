@@ -839,7 +839,7 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
 
 
 _NOISE_CORRECTIONS: dict[str, float] = {
-    "rayleigh": np.log(2),  # median(e²) = E[e²]·ln(2) for Rayleigh envelope
+    "rayleigh": np.log(2),  # median(env_sq) = mean(env_sq) * ln(2) for Rayleigh envelope
     "none": 1.0,
 }
 
@@ -858,20 +858,23 @@ def estimate_detection_snr(
 ) -> dict[str, float]:
     """Estimate SNR and CRLB timing uncertainty for a single whale call detection.
 
-    Loads the pulse-compressed data in a ±window_s window around the detection,
-    computes the amplitude envelope via the Hilbert transform, and partitions it
-    into signal and noise regions.  Noise power is estimated using the median of
-    the squared envelope, which is robust to sparse pile driving transients that
-    survive denoising.  Signal power is the mean squared envelope in the signal
-    window minus the noise floor — this naturally weights a triangular (or any
-    non-flat) envelope correctly, unlike using the peak alone.
+    Loads the pulse-compressed data in a window_s window (+/- window_s) around
+    the detection, computes the amplitude envelope via the Hilbert transform,
+    and partitions it into signal and noise regions.  Noise power is estimated
+    using the median of the squared envelope, which is robust to sparse pile
+    driving transients that survive denoising.  Signal power is the mean
+    squared envelope in the signal window minus the noise floor — this
+    naturally weights a triangular (or any non-flat) envelope correctly,
+    unlike using the peak alone.
 
-    The signal window spans ±template_duration_s around the detection peak,
-    covering the full matched-filter output width (~2T at the base).
+    The signal window spans +/- template_duration_s around the detection peak,
+    covering the full matched-filter output width (about 2 * template_duration_s
+    at the base).
 
     Timing uncertainty follows the CRLB for a linear FM chirp in AWGN:
-    σ_t = 1 / (2π·β·√SNR), where β² = (f₁²+f₁f₂+f₂²)/3 is the mean-square
-    bandwidth of the swept band [f_low_hz, f_high_hz].
+    sigma_t = 1 / (2 * pi * sqrt(beta_sq * snr_p)), where
+    beta_sq = (f_low_hz**2 + f_low_hz*f_high_hz + f_high_hz**2) / 3 is the
+    mean-square bandwidth of the swept band [f_low_hz, f_high_hz].
 
     Args:
         pc_path: Path to the pulse-compressed HDF5 file ({sensor}_pc.h5).
@@ -886,9 +889,10 @@ def estimate_detection_snr(
         filt_freq: Optional filter frequencies forwarded to process_datastream.
         window_s: Half-width of the data window loaded around the detection (s).
             Must satisfy window_s > template_duration_s; 5 s is recommended.
-        noise_correction: Divisor applied to median(e²) to recover an unbiased
-            estimate of E[e²].  "rayleigh" uses ln(2), appropriate when the
-            bandpass noise envelope is Rayleigh-distributed (Gaussian noise).
+        noise_correction: Divisor applied to median(env_sq) to recover an
+            unbiased estimate of mean(env_sq).  "rayleigh" uses ln(2),
+            appropriate when the bandpass noise envelope is
+            Rayleigh-distributed (Gaussian noise).
             "none" uses the raw median (distribution-free but biased low).
             A float value is used directly as the divisor.
 
@@ -918,7 +922,7 @@ def estimate_detection_snr(
     dt_s = (detection_time - t_file_start) / np.timedelta64(1, "s")
     peak_sample = int(round(float(dt_s) * fs))
 
-    # Load ±window_s window, clamped to file bounds.
+    # Load +/- window_s window, clamped to file bounds.
     half_win = int(window_s * fs)
     start_idx = max(0, peak_sample - half_win)
     stop_idx = peak_sample + half_win
@@ -935,7 +939,8 @@ def estimate_detection_snr(
     peak_local = peak_sample - start_idx
     n = len(env_sq)
 
-    # Signal window covers ±T around the peak (full MF output width ≈ 2T).
+    # Signal window covers +/- template_duration_s around the peak (full MF
+    # output width is about 2 * template_duration_s).
     sig_half = int(template_duration_s * fs)
     sig_start = max(0, peak_local - sig_half)
     sig_stop = min(n, peak_local + sig_half)
@@ -943,17 +948,19 @@ def estimate_detection_snr(
     noise_mask = np.ones(n, dtype=bool)
     noise_mask[sig_start:sig_stop] = False
 
-    # Noise power: median / correction converts median(e²) → E[e²].
+    # Noise power: median / correction converts median(env_sq) to mean(env_sq).
     p_noise = np.median(env_sq[noise_mask]) / correction
 
     # Signal power: mean envelope power in signal window minus noise floor.
-    # Correctly weights non-flat (e.g. triangular) envelopes; mean(A²)/3 for
-    # a triangle vs A²_peak, giving the true mean rather than inflated peak.
+    # Correctly weights non-flat (e.g. triangular) envelopes; mean(env_sq)/3
+    # for a triangle vs env_sq at the peak, giving the true mean rather than
+    # inflated peak.
     p_signal = float(max(0.0, np.mean(env_sq[sig_start:sig_stop]) - p_noise))
 
     snr_p = p_signal / p_noise if p_noise > 0.0 else 0.0
 
-    # β² = (f₁² + f₁f₂ + f₂²)/3 — mean-square bandwidth of linear FM chirp
+    # beta_sq = (f_low_hz**2 + f_low_hz*f_high_hz + f_high_hz**2) / 3
+    # -- mean-square bandwidth of linear FM chirp
     beta_sq = (f_low_hz**2 + f_low_hz * f_high_hz + f_high_hz**2) / 3.0
     if snr_p > 0.0:
         sigma_t = 1.0 / (2.0 * np.pi * np.sqrt(beta_sq * snr_p))
@@ -973,7 +980,7 @@ def estimate_detection_snr(
 _SENSOR_PAIRS = [("3dvha", "vla1"), ("3dvha", "vla2"), ("vla1", "vla2")]
 _SENSORS = ["3dvha", "vla1", "vla2"]
 
-# Maps estimate_detection_snr key → output column suffix (without sensor name).
+# Maps estimate_detection_snr key to output column suffix (without sensor name).
 # sigma_t_s is abbreviated to sigma_t; snr_p gets _db suffix.
 _RESULT_FIELD_MAP = {
     "snr_p": "snr_p_db",
@@ -982,7 +989,7 @@ _RESULT_FIELD_MAP = {
     "p_noise": "p_noise",
     "p_signal": "p_signal",
 }
-# Fields whose linear values are converted to dB (10·log10) before storage.
+# Fields whose linear values are converted to dB (10 * log10) before storage.
 _DB_FIELDS = {"snr_p"}
 
 
@@ -999,10 +1006,10 @@ def _sigma_tdoa_for_row(
     window_s: float,
     noise_correction: float | str,
 ) -> tuple[int, dict[str, dict[str, float]], float]:
-    """Compute σ_TDOA for a single detection row.
+    """Compute sigma_tdoa for a single detection row.
 
     Returns (index, per_sensor_full_results, combined_var_tdoa).
-    per_sensor_full_results maps sensor name → full estimate_detection_snr dict.
+    per_sensor_full_results maps sensor name to full estimate_detection_snr dict.
     """
     ref_time_np = np.datetime64(row["timestamp"])
     sensor_results: dict[str, dict[str, float]] = {}
@@ -1059,10 +1066,11 @@ def compute_sigma_tdoa_per_detection(
 ) -> pl.DataFrame:
     """Compute per-detection TDOA timing uncertainty from pulse-compressed data.
 
-    For each detection, estimates the single-channel timing uncertainty σ_t at
-    every sensor by calling estimate_detection_snr, then combines them into a
-    single representative σ_TDOA per detection.  The combination is the mean of
-    the three pairwise values: σ_TDOA_ij = √(σ_t_i² + σ_t_j²).
+    For each detection, estimates the single-channel timing uncertainty sigma_t
+    at every sensor by calling estimate_detection_snr, then combines them into
+    a single representative sigma_tdoa per detection.  The combination is the
+    mean of the three pairwise values: sigma_tdoa_ij = sqrt(sigma_t_i**2 +
+    sigma_t_j**2).
 
     Per-sensor timestamps are recovered from the TDOA DataFrame: the reference
     site timestamp plus the stored TDOA offset gives each sensor's absolute
@@ -1092,8 +1100,8 @@ def compute_sigma_tdoa_per_detection(
         DataFrame with one column per (field, sensor) combination — named
         ``{col}_{sensor}`` where col follows _RESULT_FIELD_MAP — plus a
         ``var_tdoa`` column containing the mean pairwise TDOA variance
-        (σ_t,i² + σ_t,j²) averaged over all sensor pairs.  Entries are NaN
-        where estimation failed.
+        (sigma_t_i**2 + sigma_t_j**2) averaged over all sensor pairs.  Entries
+        are NaN where estimation failed.
     """
     n = len(df)
     # col_name -> per-detection array
@@ -1124,7 +1132,7 @@ def compute_sigma_tdoa_per_detection(
             for i, row in enumerate(rows)
         }
         for future in tqdm(
-            as_completed(futures), total=len(rows), desc="Estimating σ_TDOA"
+            as_completed(futures), total=len(rows), desc="Estimating sigma_tdoa"
         ):
             i, sensor_results, combined_var = future.result()
             var_tdoa_out[i] = combined_var
