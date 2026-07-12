@@ -1,3 +1,5 @@
+"""Plot correlation coefficients between pairs of pile-driving strikes."""
+
 import string
 from pathlib import Path
 
@@ -10,6 +12,12 @@ from scipy.interpolate import interp1d
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 SECONDS_BETWEEN_STRIKES = 1.7
+
+sensor_map = {
+    "3dvha": "Site A",
+    "vla1": "Site B",
+    "vla2": "Site C",
+}
 
 
 def _compute_pdf_vs_time(
@@ -77,7 +85,6 @@ def _plot_corr(
     window: float = 300.0,
     strike_window_size: int | None = None,
 ) -> Figure:
-    # TODO: Once manuscript is ready, update y-axis label to math notation.
     fig, axes = plt.subplots(
         figsize=(6.5, 3.75),
         nrows=2,
@@ -113,7 +120,7 @@ def _plot_corr(
                 )
                 ax.set_xticklabels([])
                 ax.set_xlabel(None)
-                ax.set_title(sensor.upper())
+                ax.set_title(sensor_map.get(sensor, sensor.upper()))
                 if j == 0:
                     ax.set_ylabel("Strike index ($i$)")
                 else:
@@ -188,6 +195,7 @@ def plot_correlations(
     Args:
         corr_file: Path to the HDF5 file containing correlation data.
         window: Time window in seconds for plotting correlations.
+        strike_window_size: Optional size of the strike window in number of strikes.
 
     Returns:
         A matplotlib Figure object containing the correlation plot.

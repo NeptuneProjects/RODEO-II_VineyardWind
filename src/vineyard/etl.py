@@ -14,7 +14,6 @@ from tritonoa.data.inventory import Inventory
 from tritonoa.data.signal import SignalParams
 from tritonoa.data.time import ClockParameters
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -88,7 +87,7 @@ def modify_sensor_table(
             pl.lit(lon0, dtype=pl.Float64).alias("ref_lon"),
         ).unnest("result")
 
-    if not "dist_to_pile_m" in df.columns:
+    if "dist_to_pile_m" not in df.columns:
         logger.info("Computing distance to pile for sensor positions...")
         turbine_df = pl.read_csv(turbine_path)
         pile_location = (
@@ -100,9 +99,11 @@ def modify_sensor_table(
         df = df.with_columns(
             pl.struct("latitude", "longitude")
             .map_elements(
-                lambda cols: geodesic(
-                    (cols["latitude"], cols["longitude"]), pile_location
-                ).meters
+                lambda cols: (
+                    geodesic(
+                        (cols["latitude"], cols["longitude"]), pile_location
+                    ).meters
+                )
             )
             .alias("dist_to_pile_m")
         )
@@ -113,7 +114,7 @@ def modify_sensor_table(
 def bathy_etl(config: BathymetryConfig) -> None:
     bounds = config.bounds
 
-    logger.info(f"Bounding box read from configuration.")
+    logger.info("Bounding box read from configuration.")
 
     logger.info(
         f"Downloading bathymetry data for bounding box: {bounds}"

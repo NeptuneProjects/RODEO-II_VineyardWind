@@ -1,3 +1,5 @@
+"""Plot denoising results for acoustic signals."""
+
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -92,16 +94,20 @@ def plot_denoising_freq(
     subfig: plt.Figure | None = None,
 ) -> plt.Figure:
     fs = ds.stats.sampling_rate
-    STFT = ShortTimeFFT(fs=fs, hop=hop, mfft=nperseg, win=get_window(window, nperseg))
+    STFT = ShortTimeFFT(
+        fs=fs, hop=hop, mfft=nperseg, win=get_window(window, nperseg), scale_to="psd"
+    )
     freq = STFT.f
     df = freq[1] - freq[0]
 
     Zxx_orig = STFT.spectrogram(ds.data[0])
     Zxx_orig[Zxx_orig == 0] = 1e-12
-    Zxx_orig_db = 10 * np.log10(np.abs(Zxx_orig))
+    Zxx_orig_db = 10 * np.log10(Zxx_orig)
+
     Zxx_filt = STFT.spectrogram(ds.data[1])
     Zxx_filt[Zxx_filt == 0] = 1e-12
-    Zxx_filt_db = 10 * np.log10(np.abs(Zxx_filt))
+
+    Zxx_filt_db = 10 * np.log10(Zxx_filt)
     Zxx_diff_db = Zxx_filt_db - Zxx_orig_db
 
     if flim is not None:
@@ -119,16 +125,16 @@ def plot_denoising_freq(
         {
             "data": Zxx_orig_db,
             "title": "Original signal",
-            "vmin": 160,
-            "vmax": 220,
+            "vmin": 60,
+            "vmax": 120,
             "cmap": "inferno",
             "cblabel": "PSD (dB re 1 μPa²/Hz)",
         },
         {
             "data": Zxx_filt_db,
             "title": "Denoised signal",
-            "vmin": 160,
-            "vmax": 220,
+            "vmin": 60,
+            "vmax": 120,
             "cmap": "inferno",
             "cblabel": "PSD (dB re 1 μPa²/Hz)",
         },
@@ -215,14 +221,14 @@ def plot_denoising_time(
         {
             "data": signal_ds.data[0],
             "ylabel": "Amplitude (μPa)",
-            "ylim": (-1.4e8, 1.4e8),
+            "ylim": (-5e7, 5e7),
             "title": "Original signal",
             "color": "tab:blue",
         },
         {
             "data": signal_ds.data[1],
             "ylabel": "Amplitude (μPa)",
-            "ylim": (-1.4e8, 1.4e8),
+            "ylim": (-5e7, 5e7),
             "title": "Denoised signal",
             "color": "tab:green",
         },
@@ -241,7 +247,7 @@ def plot_denoising_time(
             "ylim": (0, 2.1),
             "title": "Matched filter output with denoised signal",
             "color": "tab:green",
-            "threshold": 0.4,
+            "threshold": 0.27,
             "distance": 7.0,
         },
     ]

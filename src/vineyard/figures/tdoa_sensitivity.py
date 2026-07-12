@@ -1,181 +1,96 @@
-"""TDOA localization cost-function figure.
-
-Single-panel figure showing the MSE cost function with hyperbolic lines of
-position for a query source.
-"""
-
-from pathlib import Path
+"""DOA bearing residual figure."""
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-from vineyard.readers import read_sensor_positions
-
-
-def _cost_grid(
-    e0: float,
-    n0: float,
-    e1: float,
-    n1: float,
-    e2: float,
-    n2: float,
-    qe: float,
-    qn: float,
-    grid_e: np.ndarray,
-    grid_n: np.ndarray,
-) -> np.ndarray:
-    """Compute MSE of TDOA hyperbolic residuals over a 2D grid (km²).
-
-    Returns:
-        2D array of MSE values in km².
-    """
-    r0 = np.sqrt((grid_e - e0) ** 2 + (grid_n - n0) ** 2)
-    r1 = np.sqrt((grid_e - e1) ** 2 + (grid_n - n1) ** 2)
-    r2 = np.sqrt((grid_e - e2) ** 2 + (grid_n - n2) ** 2)
-
-    qr0 = np.sqrt((qe - e0) ** 2 + (qn - n0) ** 2)
-    qr1 = np.sqrt((qe - e1) ** 2 + (qn - n1) ** 2)
-    qr2 = np.sqrt((qe - e2) ** 2 + (qn - n2) ** 2)
-
-    a = (r1 - r0) - (qr1 - qr0)
-    b = (r2 - r0) - (qr2 - qr0)
-    c = (r2 - r1) - (qr2 - qr1)
-
-    return (a**2 + b**2 + c**2) / 3.0
 
 
 def plot_tdoa_sensitivity(
-    sensor_data: Path,
-    grid_extent_km: tuple[float, float, float, float] | None = None,
-    grid_resolution: int = 300,
-    query_point_km: tuple[float, float] | None = None,
-    figsize: tuple[float, float] = (4.5, 4.5),
+    query_bearing_deg: float = 350.0,
+    figsize: tuple[float, float] = (3.0, 1.5),
 ) -> Figure:
-    """Plot the TDOA cost-function landscape for a query source.
+    """Plot the normalized DOA residual as a function of trial bearing.
 
-    Shows the log₁₀ MSE of the TDOA hyperbolic residuals for a query source,
-    with hyperbolic lines of position (LOPs) overlaid.  Each LOP is the locus
-    of equal range difference between one sensor pair; all three LOPs intersect
-    at the true source.  A narrow, well-isolated intersection indicates good
-    localization.
+    Shows 10 log10 of the normalized least-squares residual of the
+    plane-wave TDOA fit as a function of trial bearing. The residual
+    vanishes at the true bearing and its mirror image across the array
+    axis, illustrating the north-south ambiguity of the east-west array.
 
     Args:
-        sensor_data: Path to sensor positions CSV (see read_sensor_positions).
-        grid_extent_km: (e_min, e_max, n_min, n_max) bounds of the search grid
-            in km, in the same ENU frame as the sensor positions.  Defaults to
-            ±50 km around the sensor centroid.
-        grid_resolution: Number of grid points per axis.
-        query_point_km: (easting_km, northing_km) of the query source in the
-            same ENU frame as the sensor positions (km from the reference
-            point).  Defaults to 20 km due north of the sensor centroid.
+        query_bearing_deg: True source bearing (degrees CW from North).
         figsize: Figure size (width, height) in inches.
 
     Returns:
         Matplotlib Figure.
     """
-    # ---- Sensor positions (meters → km) ----
-    sensor_e_m, sensor_n_m, _, _ = read_sensor_positions(sensor_data)
-    sensor_e = [e / 1000.0 for e in sensor_e_m]
-    sensor_n = [n / 1000.0 for n in sensor_n_m]
-    e0, e1, e2 = sensor_e
-    n0, n1, n2 = sensor_n
+    c = 1.5  # km/s
 
-    # ---- Search grid ----
-    cx = float(np.mean(sensor_e))
-    cy = float(np.mean(sensor_n))
-    if grid_extent_km is None:
-        e_min, e_max, n_min, n_max = cx - 50.0, cx + 50.0, cy - 50.0, cy + 50.0
-    else:
-        e_min, e_max, n_min, n_max = grid_extent_km
-    e_vec = np.linspace(e_min, e_max, grid_resolution)
-    n_vec = np.linspace(n_min, n_max, grid_resolution)
-    grid_e, grid_n = np.meshgrid(e_vec, n_vec)
+    # A constant geometry factor common to every term cancels once residuals
+    # are normalized by their maximum; only s_e_trial matters here.
+    s_e_true = -np.sin(np.radians(query_bearing_deg)) / c
 
-    # ---- Query source ----
-    if query_point_km is None:
-        qe, qn = cx, cy + 20.0  # 20 km due north — worst case for E–W arrays
-    else:
-        qe, qn = float(query_point_km[0]), float(query_point_km[1])
+    # Axis centered on North: bearings run from -180 degrees through 0 degrees
+    # (N) to +180 degrees.
+    # Shift formula: bearing > 180 degrees maps to bearing - 360 degrees.
+    bearings = np.linspace(-180.0, 180.0, 7201)
+    s_e_trial = -np.sin(np.radians(bearings)) / c
+    residuals = (s_e_trial - s_e_true) ** 2
+    residuals /= residuals.max()
+    residuals_db = 10.0 * np.log10(np.maximum(residuals, 1e-6))
 
-    # ---- Cost field ----
-    cost = _cost_grid(e0, n0, e1, n1, e2, n2, qe, qn, grid_e, grid_n)
+    # Mirror bearing: sin(theta_mirror_deg) = sin(query_bearing_deg) implies
+    # theta_mirror_deg = 180 degrees - query_bearing_deg
+    theta_mirror_deg = (180.0 - query_bearing_deg) % 360.0
 
-    # ---- Figure ----
+    # Convert true and mirror bearings to centered coordinates
+    query_centered = (
+        query_bearing_deg if query_bearing_deg <= 180.0 else query_bearing_deg - 360.0
+    )
+    mirror_centered = (
+        theta_mirror_deg if theta_mirror_deg <= 180.0 else theta_mirror_deg - 360.0
+    )
+
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
-    log_cost = np.log10(cost + 1e-10)
-    im = ax.pcolormesh(
-        grid_e,
-        grid_n,
-        log_cost,
-        cmap="bone",
-        vmin=-4,
-        vmax=2,
-        shading="auto",
-        rasterized=True,
+    # Shade the southern half-space (excluded by geographic prior).
+    # In the centered axis, south half-space [90, 270] degrees maps to
+    # [90, 180] degrees and [-180, -90] degrees.
+    ax.axvspan(
+        -180.0,
+        -90.0,
+        color="lightgray",
+        alpha=0.5,
+        zorder=0,
+        label="Southern half-space",
     )
-    div = make_axes_locatable(ax)
-    cax = div.append_axes("right", size="4%", pad=0.05)
-    cb = fig.colorbar(im, cax=cax, extend="both")
-    cb.set_label(r"$\mathdefault{log}_{10}(\mathdefault{MSE})$ (km²)")
+    ax.axvspan(90.0, 180.0, color="lightgray", alpha=0.5, zorder=0)
 
-    # Range differences over the grid and at the query source
-    r0_g = np.sqrt((grid_e - e0) ** 2 + (grid_n - n0) ** 2)
-    r1_g = np.sqrt((grid_e - e1) ** 2 + (grid_n - n1) ** 2)
-    r2_g = np.sqrt((grid_e - e2) ** 2 + (grid_n - n2) ** 2)
-    qr0 = float(np.sqrt((qe - e0) ** 2 + (qn - n0) ** 2))
-    qr1 = float(np.sqrt((qe - e1) ** 2 + (qn - n1) ** 2))
-    qr2 = float(np.sqrt((qe - e2) ** 2 + (qn - n2) ** 2))
+    ax.plot(bearings, residuals_db, "k-", linewidth=1.0, zorder=2)
 
-    _LOP_COLORS = ["c", "m", "y"]
-    _LOP_LABELS = [
-        "3DVHA-VLA1 line of constant TDOA",
-        "3DVHA-VLA2 line of constant TDOA",
-        "VLA1-VLA2 line of constant TDOA",
-    ]
-    for diff_grid, true_diff, color in zip(
-        [r1_g - r0_g, r2_g - r0_g, r2_g - r1_g],
-        [qr1 - qr0, qr2 - qr0, qr2 - qr1],
-        _LOP_COLORS,
-    ):
-        ax.contour(
-            grid_e,
-            grid_n,
-            diff_grid,
-            levels=[true_diff],
-            colors=[color],
-            linewidths=1.5,
-        )
+    ax.axvline(
+        query_centered,
+        color="tab:blue",
+        linewidth=1.0,
+        linestyle="--",
+        label=f"True bearing ({query_bearing_deg:.0f}°)",
+        zorder=3,
+    )
+    ax.axvline(
+        mirror_centered,
+        color="tab:red",
+        linewidth=1.0,
+        linestyle="--",
+        label=f"Mirror bearing ({theta_mirror_deg:.0f}°)",
+        zorder=3,
+    )
 
-    for se, sn in zip(sensor_e, sensor_n):
-        ax.plot(se, sn, "kv", ms=7, zorder=5)
-    ax.plot(qe, qn, "r*", ms=12, zorder=6, markeredgecolor="k")
-
-    legend_handles = [
-        Line2D([0], [0], marker="v", color="k", label="Sensors", ls="none", ms=5),
-        Line2D(
-            [0],
-            [0],
-            marker="*",
-            color="red",
-            label="Source",
-            ls="none",
-            ms=7,
-            markeredgecolor="k",
-        ),
-        *[
-            Line2D([0], [0], color=c, label=l, linewidth=1.5)
-            for c, l in zip(_LOP_COLORS, _LOP_LABELS)
-        ],
-    ]
-    ax.legend(handles=legend_handles, fontsize=6, loc="lower right", framealpha=1.0)
-
-    ax.set_xlabel("Easting (km)")
-    ax.set_ylabel("Northing (km)")
-    ax.set_aspect("equal")
+    ax.set_xlim(-180.0, 180.0)
+    ax.set_ylim(-65.0, 5.0)
+    ax.set_xticks([-180, -90, 0, 90, 180])
+    ax.set_xticklabels(["S (180°)", "W (270°)", "N (0°)", "E (90°)", "S (180°)"])
+    ax.set_xlabel("Bearing")
+    ax.set_ylabel("Normalized residual (dB)")
+    ax.legend(fontsize=7, loc="lower right", ncol=1, framealpha=1.0)
 
     fig.tight_layout()
     return fig

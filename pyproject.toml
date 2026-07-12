@@ -26,15 +26,21 @@ dependencies = [
     "pymap3d",
     "pyproj",
     "python-dotenv",
+    "scikit-learn",
     "scipy",
     "tqdm",
     "rodeo",
+    "seaborn",
     "TritonOA",
 ]
 requires-python = ">= 3.12"
 
+[project.optional-dependencies]
+annotator = ["dash", "dash-bootstrap-components", "plotly"]
+
 [project.scripts]
 workflow = "vineyard.workflow:main"
+annotator = "vineyard.annotator:main"
 
 [tool.uv.sources]
 rodeo = { path = "../core", editable = true }

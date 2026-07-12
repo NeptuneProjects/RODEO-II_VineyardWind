@@ -67,14 +67,11 @@ class ExperimentConfig(BaseModel):
 class WhaleTrackingConfig(BaseModel):
     """Configuration for whale tracking figure creation."""
 
-    bathy_data: Path | None = None
-    sensor_data: Path | None = None
-    turbine_data: Path | None = None
-    active_turbine_name: str | None = None
-    whale_bearings: Path | None = None
-    whale_ranges: Path | None = None
+    whale_data: Path | None = None
     time_ranges: list[list[str]] | None = None
     output: Path = "reports/figures/whale_tracking.png"
+    brg_ylim: tuple[float, float] | None = None  # bearing panel y-axis limits (degrees)
+    brg_ref: float | None = None  # optional reference bearing line (degrees)
 
     @model_validator(mode="after")
     def convert_to_np_datetime(self) -> "WhaleTrackingConfig":
@@ -155,6 +152,10 @@ class TemplateConstructionConfig(BaseModel):
     filt_type: str | None = None
     filt_freq: float | list[float] | None = None
 
+    @property
+    def output(self) -> Path:
+        return self.output_dir / f"{self.sensor_name}_template_construction.png"
+
 
 class DOPConfig(BaseModel):
     """Configuration for the geometric dilution of precision (GDOP) figure."""
@@ -167,14 +168,26 @@ class DOPConfig(BaseModel):
 
 
 class TDOASensitivityConfig(BaseModel):
-    """Configuration for the TDOA localization cost-function figure."""
+    """Configuration for the DOA bearing residual figure."""
 
-    sensor_data: Path = "data/sensors.csv"
-    grid_extent_km: tuple[float, float, float, float] | None = None
-    grid_resolution: int = 300
-    query_point_km: tuple[float, float] | None = None
-    figsize: tuple[float, float] = (4.5, 4.5)
+    query_bearing_deg: float = 350.0
+    figsize: tuple[float, float] = (5.0, 2.0)
     output: Path = "reports/figures/tdoa/tdoa_sensitivity.png"
+
+
+class SNRComparisonConfig(BaseModel):
+    """Configuration for the SNR piling vs. quiet comparison figure."""
+
+    snr_file: Path = Path("reports/evaluation/snr_comparison.csv")
+    noise_reduction_dir: Path = Path("data/acoustic/denoised")
+    output: Path = Path("reports/figures/snr_comparison.png")
+
+
+class PRCurveConfig(BaseModel):
+    """Configuration for the precision-recall curve figure."""
+
+    pr_curve_data: Path = Path("reports/evaluation/pr_curve_data.csv")
+    output: Path = Path("reports/scirep/figure07.png")
 
 
 class PlottingConfig(BaseModel):
@@ -195,6 +208,8 @@ class PlottingConfig(BaseModel):
     correlation: CorrelationConfig | None = None
     dop: DOPConfig | None = None
     tdoa_sensitivity: TDOASensitivityConfig | None = None
+    snr_comparison: SNRComparisonConfig | None = None
+    pr_curve: PRCurveConfig | None = None
     savefig_kwargs: dict[str, Any] = {}
     calibration_dir: Path | None = None
 
@@ -230,7 +245,7 @@ def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str
         mathtext: If True, use math font. If False, use regular figure font (via \\mathregular).
 
     Returns:
-        Formatted string: "0" for zero, "C × 10^n" for others with superscripts.
+        Formatted string: "0" for zero, "C x 10^n" for others with superscripts.
     """
     if value == 0:
         return "0"
@@ -239,27 +254,16 @@ def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str
     exponent = int(np.floor(np.log10(abs(value))))
     mantissa = value / (10**exponent)
 
-    # If mantissa is very close to 1, just show 10 ** exponent
-    if np.isclose(mantissa, 1.0, atol=0.01):
+    # If mantissa is very close to +-1, just show +-10 ** exponent
+    if np.isclose(abs(mantissa), 1.0, atol=0.01):
+        sign = "-" if mantissa < 0 else ""
         if exponent == 0:
-            return "1"
-        if mathtext:
-            return f"$10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{10^{{{exponent}}}}}$"
-    elif np.isclose(mantissa, -1.0, atol=0.01):
-        if exponent == 0:
-            return "-1"
-        if mathtext:
-            return f"$-10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{-10^{{{exponent}}}}}$"
+            return f"{sign}1"
+        body = f"{sign}10^{{{exponent}}}"
     else:
-        # Include the mantissa
-        if mathtext:
-            return f"${mantissa:.1f} \\times 10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{{mantissa:.1f} \\times 10^{{{exponent}}}}}$"
+        body = f"{mantissa:.1f} \\times 10^{{{exponent}}}"
+
+    return f"${body}$" if mathtext else f"$\\mathregular{{{body}}}$"
 
 
 def save_and_show_figure(

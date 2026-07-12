@@ -45,7 +45,8 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
     # Load calibration data
     data = np.loadtxt(cal_file, skiprows=1, delimiter=",")
     freq_cal = data[:, 0]
-    sensitivity_dB = data[:, 1] - 2.5
+    MANUFACTURER_CORRECTION = -2.5
+    sensitivity_dB = data[:, 1] + MANUFACTURER_CORRECTION
 
     # Convert sensitivity from dB re 1V/uPa to linear scale (V/uPa)
     sensitivity_linear = 10 ** (sensitivity_dB / 20)
@@ -70,12 +71,13 @@ def calibrate_3dvha(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray
 
 
 def calibrate_vla(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
-    """Apply frequency-independent sensitivity calibration to convert voltage to micropascals.
+    """Apply frequency-independent sensitivity calibration to convert raw
+    24-bit SHRU ADC counts to micropascals.
 
     Args:
         cal_file: Path to TOML calibration file with fixed_gain and sensitivity
             fields (both in dB).
-        signal: Time-series signal in volts.
+        signal: Time-series signal in raw 24-bit ADC counts.
         fs: Sampling rate in Hz (unused but kept for API consistency).
 
     Returns:
@@ -93,8 +95,13 @@ def calibrate_vla(cal_file: Path, signal: np.ndarray, fs: float) -> np.ndarray:
     # Convert to linear scale (V/uPa)
     total_sensitivity_linear = 10 ** (total_sensitivity_dB / 20)
 
+    # SHRU digitizer: 24-bit ADC, +/-2.5 V halfscale
+    ADC_HALFSCALE_VOLTS = 2.5
+    ADC_MAX_COUNT = 2**23 - 1
+    voltage = signal * (ADC_HALFSCALE_VOLTS / ADC_MAX_COUNT)
+
     # Apply calibration: P (uPa) = V (volts) / S (V/uPa)
-    calibrated_signal = signal / total_sensitivity_linear / 1e6
+    calibrated_signal = voltage / total_sensitivity_linear
 
     return calibrated_signal
 

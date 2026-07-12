@@ -1,8 +1,4 @@
-"""Geometric dilution of precision (GDOP) figure.
-
-Single-panel figure showing GDOP over the search domain for the sensor array
-geometry.
-"""
+"""Geometric dilution of precision (GDOP) figure."""
 
 from pathlib import Path
 

@@ -1,8 +1,4 @@
-"""Template construction figure creation.
-
-This module provides functionality for creating template construction figures
-that show how templates are built from aligned traces in a rolling window.
-"""
+"""Signal template construction figure creation."""
 
 import logging
 from collections.abc import Sequence
@@ -16,6 +12,7 @@ from matplotlib.ticker import FuncFormatter
 from numpy.typing import NDArray
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+import vineyard.readers as readers
 from vineyard.figures.common import add_panel_label, format_tick_scientific
 from vineyard.process_utils import (
     enforce_same_size,
@@ -23,7 +20,6 @@ from vineyard.process_utils import (
     get_anchor_trace,
     sample_delay,
 )
-import vineyard.readers as readers
 
 
 def plot_strike_template(
@@ -60,12 +56,14 @@ def plot_strike_template(
         buffer_start: Buffer before the strike peak (seconds).
         buffer_end: Buffer after the strike peak (seconds).
         window_size: Size of the rolling window.
-        output_dir: Directory to save the plot.
         ylim: Optional y-axis limits.
         taper_pc: Taper percentage for data processing.
         dec_factor: Decimation factor for data processing.
         filt_type: Filter type for data processing.
         filt_freq: Filter frequency for data processing.
+
+    Returns:
+        Matplotlib Figure.
     """
     # Read the acoustic data
     logging.info(f"Reading acoustic data for {sensor_name}...")
@@ -121,7 +119,7 @@ def plot_strike_template(
         # Validate strike index
         if strike_idx < 0 or strike_idx >= num_strikes:
             raise ValueError(
-                f"Strike index {strike_idx} out of range [0, {num_strikes-1}]"
+                f"Strike index {strike_idx} out of range [0, {num_strikes - 1}]"
             )
 
         # Determine window boundaries
@@ -282,7 +280,7 @@ def plot_template(
                 label="Reference",
                 linewidth=1.2,
             )
-            ytick_labels.append(f"Reference $p_i$")
+            ytick_labels.append("Reference $p_i$")
         else:
             if i < reference_ind:
                 label = f"$p_{{i - {np.abs(i - reference_ind)}}}$"

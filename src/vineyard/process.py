@@ -2,6 +2,7 @@ import gc
 import logging
 import os
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,21 +13,21 @@ import polars as pl
 from numpy.typing import ArrayLike, NDArray
 from polars import DataFrame, concat
 from pydantic import BaseModel, Field, model_validator
+from rodeo.utils import compute_array_size, initialize_julia
 from scipy.signal import find_peaks, hilbert
 from tqdm import tqdm
 from tritonoa.data.reader import read_and_process, read_hdf5
 from tritonoa.data.signal import taper
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
+import vineyard.readers as readers
+from vineyard.figures.templates import plot_template
 from vineyard.process_utils import (
     enforce_same_size,
     extract_trace,
     get_anchor_trace,
     sample_delay,
 )
-import vineyard.readers as readers
-from rodeo.utils import compute_array_size, initialize_julia
-from vineyard.figures.templates import plot_template
 
 logger = logging.getLogger(__name__)
 
@@ -504,7 +505,7 @@ def build_strikes_df(
         for i, (time_start, time_end) in enumerate(time_ranges):
             logger.info(
                 f"Processing sensor {sensor['name']}, time range "
-                f"{i+1}/{len(time_ranges)}: {time_start} to {time_end}"
+                f"{i + 1}/{len(time_ranges)}: {time_start} to {time_end}"
             )
 
             df = _build_strikes_df_per_sensor(
@@ -715,7 +716,7 @@ def denoise_strikes(
         strike_index_path: Path to the CSV file containing strike indices.
         template_path: Path to the HDF5 file containing templates for each sensor.
     """
-    mean_reduction, median_reduction = [], []
+    mean_reduction, median_reduction, std_reduction = [], [], []
     for sensor in config.sensors:
         ds, strike_index, templates, start_samples, end_samples = (
             readers.read_denoise_data(
@@ -767,6 +768,7 @@ def denoise_strikes(
         df.write_csv(config.denoised_data / f"{sensor['name']}_noise_reduction.csv")
         mean_reduction.append(df["rms_diff_db"].mean())
         median_reduction.append(df["rms_diff_db"].median())
+        std_reduction.append(df["rms_diff_db"].std())
         logger.info(f"Denoised data for {sensor['name']} saved to {output_file}.")
 
     pl.DataFrame(
@@ -774,11 +776,55 @@ def denoise_strikes(
             "sensor": [s["name"] for s in config.sensors],
             "mean_reduction_db": mean_reduction,
             "median_reduction_db": median_reduction,
+            "std_reduction_db": std_reduction,
         }
     ).write_csv(config.denoised_data / "noise_reduction_summary.csv")
     logger.info(
         f"Noise reduction summary saved to {config.denoised_data / 'noise_reduction_summary.csv'}."
     )
+
+
+def _detect_on_channel(
+    config: WhaleDetectionConfig, data_path: Path, channel: int, output_file: Path
+) -> None:
+    dfs = []
+    for sensor in config.sensors:
+        ds = readers.process_datastream(
+            read_hdf5(data_path / f"{sensor['name']}_pc.h5"),
+            filt_type=config.filt_type,
+            filt_freq=config.filt_freq,
+        )
+        fs = ds.stats.sampling_rate
+        cf = np.abs(hilbert(ds.data[channel]))
+        peaks = find_peaks(
+            cf / np.max(cf),
+            height=sensor["threshold"],
+            distance=int(sensor["distance_s"] * fs),
+        )[0]
+        times = _refine_peak_times(cf, peaks, ds.time_vector, fs)
+        del cf, ds
+        gc.collect()
+        logger.info(
+            f"Detected {len(peaks)} whale calls on sensor {sensor['name']} "
+            f"(channel {channel})."
+        )
+        dfs.append(
+            pl.DataFrame(
+                {
+                    "sensor": sensor["name"],
+                    "timestamp": times,
+                    "sample": peaks,
+                    "channel": channel,
+                    "threshold": sensor["threshold"],
+                    "distance_s": sensor["distance_s"],
+                }
+            )
+        )
+    df = pl.concat(dfs).with_columns(
+        pl.col("timestamp").dt.epoch(time_unit="us").alias("unix_time_us")
+    )
+    df.write_csv(output_file)
+    logger.info(f"Whale call detections saved to {output_file}.")
 
 
 def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
@@ -789,45 +835,315 @@ def detect_whale_calls(config: WhaleDetectionConfig, data_path: Path) -> None:
             for whale call detection.
         data_path: Path to the directory containing the denoised data files.
     """
-    dfs = []
-    for sensor in config.sensors:
-        ds = readers.process_datastream(
-            read_hdf5(data_path / f"{sensor['name']}_pc.h5"),
-            filt_type=config.filt_type,
-            filt_freq=config.filt_freq,
-        )
-        fs = ds.stats.sampling_rate
+    _detect_on_channel(config, data_path, config.channel, config.output_file)
 
-        cf = np.abs(hilbert(ds.data[config.channel]))
 
-        peaks = find_peaks(
-            cf / np.max(cf),
-            height=sensor["threshold"],
-            distance=int(sensor["distance_s"] * fs),
-        )[0]
-        times = ds.time_vector[peaks]
-        del cf, ds
-        gc.collect()
-        logger.info(f"Detected {len(peaks)} whale calls on sensor {sensor['name']}.")
+_NOISE_CORRECTIONS: dict[str, float] = {
+    "rayleigh": np.log(2),  # median(env_sq) = mean(env_sq) * ln(2) for Rayleigh envelope
+    "none": 1.0,
+}
 
-        dfs.append(
-            pl.DataFrame(
-                {
-                    "sensor": sensor["name"],
-                    "timestamp": times,
-                    "sample": peaks,
-                    "channel": config.channel,
-                    "threshold": sensor["threshold"],
-                    "distance_s": sensor["distance_s"],
-                }
+
+def estimate_detection_snr(
+    pc_path: Path,
+    channel: int,
+    detection_time: np.datetime64,
+    template_duration_s: float,
+    f_low_hz: float,
+    f_high_hz: float,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    window_s: float = 5.0,
+    noise_correction: float | str = "rayleigh",
+) -> dict[str, float]:
+    """Estimate SNR and CRLB timing uncertainty for a single whale call detection.
+
+    Loads the pulse-compressed data in a window_s window (+/- window_s) around
+    the detection, computes the amplitude envelope via the Hilbert transform,
+    and partitions it into signal and noise regions.  Noise power is estimated
+    using the median of the squared envelope, which is robust to sparse pile
+    driving transients that survive denoising.  Signal power is the mean
+    squared envelope in the signal window minus the noise floor — this
+    naturally weights a triangular (or any non-flat) envelope correctly,
+    unlike using the peak alone.
+
+    The signal window spans +/- template_duration_s around the detection peak,
+    covering the full matched-filter output width (about 2 * template_duration_s
+    at the base).
+
+    Timing uncertainty follows the CRLB for a linear FM chirp in AWGN:
+    sigma_t = 1 / (2 * pi * sqrt(beta_sq * snr_p)), where
+    beta_sq = (f_low_hz**2 + f_low_hz*f_high_hz + f_high_hz**2) / 3 is the
+    mean-square bandwidth of the swept band [f_low_hz, f_high_hz].
+
+    Args:
+        pc_path: Path to the pulse-compressed HDF5 file ({sensor}_pc.h5).
+        channel: Integer channel index (same value passed to detect_whale_calls).
+        detection_time: Refined peak timestamp from the detection DataFrame.
+        template_duration_s: Duration of the whale call template in seconds.
+            Defines the signal exclusion window for noise estimation.
+        f_low_hz: Lower frequency of the linear FM chirp template (Hz).
+        f_high_hz: Upper frequency of the linear FM chirp template (Hz).
+        filt_type: Optional filter type forwarded to process_datastream (should
+            match the filter applied during detection).
+        filt_freq: Optional filter frequencies forwarded to process_datastream.
+        window_s: Half-width of the data window loaded around the detection (s).
+            Must satisfy window_s > template_duration_s; 5 s is recommended.
+        noise_correction: Divisor applied to median(env_sq) to recover an
+            unbiased estimate of mean(env_sq).  "rayleigh" uses ln(2),
+            appropriate when the bandpass noise envelope is
+            Rayleigh-distributed (Gaussian noise).
+            "none" uses the raw median (distribution-free but biased low).
+            A float value is used directly as the divisor.
+
+    Returns:
+        Dict with keys:
+            snr_p       — linear peak signal-to-noise power ratio
+            sigma_t_s   — 1-sigma single-channel timing uncertainty (s)
+            sigma_tdoa_s— 1-sigma TDOA uncertainty between two channels (s)
+            p_noise     — estimated noise power (envelope-squared units)
+            p_signal    — estimated signal power (envelope-squared units)
+    """
+    if isinstance(noise_correction, str):
+        if noise_correction not in _NOISE_CORRECTIONS:
+            raise ValueError(
+                f"noise_correction must be one of {list(_NOISE_CORRECTIONS)!r} or a float"
             )
-        )
+        correction = _NOISE_CORRECTIONS[noise_correction]
+    else:
+        correction = float(noise_correction)
 
-    df = pl.concat(dfs).with_columns(
-        pl.col("timestamp").dt.epoch(time_unit="us").alias("unix_time_us")
+    # Load a single sample to obtain file metadata without reading all data.
+    meta = read_hdf5(pc_path, start=0, stop=1)
+    fs = meta.stats.sampling_rate
+    t_file_start = meta.stats.time_init
+
+    # Convert detection timestamp to sample index within the file.
+    dt_s = (detection_time - t_file_start) / np.timedelta64(1, "s")
+    peak_sample = int(round(float(dt_s) * fs))
+
+    # Load +/- window_s window, clamped to file bounds.
+    half_win = int(window_s * fs)
+    start_idx = max(0, peak_sample - half_win)
+    stop_idx = peak_sample + half_win
+
+    ds = readers.process_datastream(
+        read_hdf5(pc_path, start=start_idx, stop=stop_idx),
+        filt_type=filt_type,
+        filt_freq=filt_freq,
     )
-    df.write_csv(config.output_file)
-    logger.info(f"Whale call detections saved to {config.output_file}.")
+
+    env_sq = np.abs(hilbert(ds.data[channel])) ** 2
+
+    # Peak location within the loaded window.
+    peak_local = peak_sample - start_idx
+    n = len(env_sq)
+
+    # Signal window covers +/- template_duration_s around the peak (full MF
+    # output width is about 2 * template_duration_s).
+    sig_half = int(template_duration_s * fs)
+    sig_start = max(0, peak_local - sig_half)
+    sig_stop = min(n, peak_local + sig_half)
+
+    noise_mask = np.ones(n, dtype=bool)
+    noise_mask[sig_start:sig_stop] = False
+
+    # Noise power: median / correction converts median(env_sq) to mean(env_sq).
+    p_noise = np.median(env_sq[noise_mask]) / correction
+
+    # Signal power: mean envelope power in signal window minus noise floor.
+    # Correctly weights non-flat (e.g. triangular) envelopes; mean(env_sq)/3
+    # for a triangle vs env_sq at the peak, giving the true mean rather than
+    # inflated peak.
+    p_signal = float(max(0.0, np.mean(env_sq[sig_start:sig_stop]) - p_noise))
+
+    snr_p = p_signal / p_noise if p_noise > 0.0 else 0.0
+
+    # beta_sq = (f_low_hz**2 + f_low_hz*f_high_hz + f_high_hz**2) / 3
+    # -- mean-square bandwidth of linear FM chirp
+    beta_sq = (f_low_hz**2 + f_low_hz * f_high_hz + f_high_hz**2) / 3.0
+    if snr_p > 0.0:
+        sigma_t = 1.0 / (2.0 * np.pi * np.sqrt(beta_sq * snr_p))
+        sigma_tdoa = np.sqrt(2.0) * sigma_t
+    else:
+        sigma_t = sigma_tdoa = float("inf")
+
+    return {
+        "snr_p": snr_p,
+        "sigma_t_s": sigma_t,
+        "sigma_tdoa_s": sigma_tdoa,
+        "p_noise": float(p_noise),
+        "p_signal": p_signal,
+    }
+
+
+_SENSOR_PAIRS = [("3dvha", "vla1"), ("3dvha", "vla2"), ("vla1", "vla2")]
+_SENSORS = ["3dvha", "vla1", "vla2"]
+
+# Maps estimate_detection_snr key to output column suffix (without sensor name).
+# sigma_t_s is abbreviated to sigma_t; snr_p gets _db suffix.
+_RESULT_FIELD_MAP = {
+    "snr_p": "snr_p_db",
+    "sigma_t_s": "sigma_t",
+    "sigma_tdoa_s": "sigma_tdoa_s",
+    "p_noise": "p_noise",
+    "p_signal": "p_signal",
+}
+# Fields whose linear values are converted to dB (10 * log10) before storage.
+_DB_FIELDS = {"snr_p"}
+
+
+def _sigma_tdoa_for_row(
+    i: int,
+    row: dict,
+    pc_data_path: Path,
+    channel: int,
+    template_duration_s: float,
+    f_low_hz: float,
+    f_high_hz: float,
+    filt_type: str | None,
+    filt_freq: float | Sequence[float] | None,
+    window_s: float,
+    noise_correction: float | str,
+) -> tuple[int, dict[str, dict[str, float]], float]:
+    """Compute sigma_tdoa for a single detection row.
+
+    Returns (index, per_sensor_full_results, combined_var_tdoa).
+    per_sensor_full_results maps sensor name to full estimate_detection_snr dict.
+    """
+    ref_time_np = np.datetime64(row["timestamp"])
+    sensor_results: dict[str, dict[str, float]] = {}
+
+    for sensor in _SENSORS:
+        pc_path = pc_data_path / f"{sensor}_pc.h5"
+        if not pc_path.exists():
+            continue
+
+        t_sensor = ref_time_np + np.timedelta64(int(row[sensor] * 1e6), "us")
+        try:
+            result = estimate_detection_snr(
+                pc_path=pc_path,
+                channel=channel,
+                detection_time=t_sensor,
+                template_duration_s=template_duration_s,
+                f_low_hz=f_low_hz,
+                f_high_hz=f_high_hz,
+                filt_type=filt_type,
+                filt_freq=filt_freq,
+                window_s=window_s,
+                noise_correction=noise_correction,
+            )
+            if np.isfinite(result["sigma_t_s"]):
+                sensor_results[sensor] = result
+        except Exception:
+            logger.warning(
+                "SNR estimation failed for sensor %s at detection %d.",
+                sensor,
+                i,
+                exc_info=True,
+            )
+
+    var_t = {s: r["sigma_t_s"] ** 2 for s, r in sensor_results.items()}
+    pair_variances = [
+        var_t[s1] + var_t[s2] for s1, s2 in _SENSOR_PAIRS if s1 in var_t and s2 in var_t
+    ]
+    combined_var = float(np.mean(pair_variances)) if pair_variances else float("nan")
+    return i, sensor_results, combined_var
+
+
+def compute_sigma_tdoa_per_detection(
+    df: pl.DataFrame,
+    pc_data_path: Path,
+    channel: int,
+    template_duration_s: float,
+    f_low_hz: float,
+    f_high_hz: float,
+    filt_type: str | None = None,
+    filt_freq: float | Sequence[float] | None = None,
+    window_s: float = 5.0,
+    noise_correction: float | str = "rayleigh",
+    max_workers: int = 10,
+) -> pl.DataFrame:
+    """Compute per-detection TDOA timing uncertainty from pulse-compressed data.
+
+    For each detection, estimates the single-channel timing uncertainty sigma_t
+    at every sensor by calling estimate_detection_snr, then combines them into
+    a single representative sigma_tdoa per detection.  The combination is the
+    mean of the three pairwise values: sigma_tdoa_ij = sqrt(sigma_t_i**2 +
+    sigma_t_j**2).
+
+    Per-sensor timestamps are recovered from the TDOA DataFrame: the reference
+    site timestamp plus the stored TDOA offset gives each sensor's absolute
+    detection time.  Sensors whose PC file is missing or whose SNR estimate
+    fails are skipped; if all three sensors fail for a detection, the
+    corresponding entry is NaN.
+
+    Detections are processed concurrently with a ThreadPoolExecutor; the inner
+    sensor loop within each detection remains serial so that concurrent reads
+    from the same HDF5 file are minimised.
+
+    Args:
+        df: TDOA DataFrame as returned by estimate_tdoa / correlations_to_dataframe,
+            with columns: timestamp (pl.Datetime), 3dvha, vla1, vla2 (seconds).
+        pc_data_path: Directory containing {sensor}_pc.h5 files.
+        channel: Integer channel index (same as used during detection).
+        template_duration_s: Template duration in seconds.
+        f_low_hz: Lower frequency of the linear FM chirp template (Hz).
+        f_high_hz: Upper frequency of the linear FM chirp template (Hz).
+        filt_type: Filter type forwarded to process_datastream.
+        filt_freq: Filter frequencies forwarded to process_datastream.
+        window_s: Half-width of the data window around each detection (s).
+        noise_correction: Noise correction for estimate_detection_snr.
+        max_workers: Number of parallel threads.
+
+    Returns:
+        DataFrame with one column per (field, sensor) combination — named
+        ``{col}_{sensor}`` where col follows _RESULT_FIELD_MAP — plus a
+        ``var_tdoa`` column containing the mean pairwise TDOA variance
+        (sigma_t_i**2 + sigma_t_j**2) averaged over all sensor pairs.  Entries
+        are NaN where estimation failed.
+    """
+    n = len(df)
+    # col_name -> per-detection array
+    arrays: dict[str, np.ndarray] = {
+        f"{col}_{sensor}": np.full(n, np.nan)
+        for col in _RESULT_FIELD_MAP.values()
+        for sensor in _SENSORS
+    }
+    var_tdoa_out = np.full(n, np.nan)
+    rows = list(df.iter_rows(named=True))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _sigma_tdoa_for_row,
+                i,
+                row,
+                pc_data_path,
+                channel,
+                template_duration_s,
+                f_low_hz,
+                f_high_hz,
+                filt_type,
+                filt_freq,
+                window_s,
+                noise_correction,
+            ): i
+            for i, row in enumerate(rows)
+        }
+        for future in tqdm(
+            as_completed(futures), total=len(rows), desc="Estimating sigma_tdoa"
+        ):
+            i, sensor_results, combined_var = future.result()
+            var_tdoa_out[i] = combined_var
+            for sensor, result in sensor_results.items():
+                for src_key, col in _RESULT_FIELD_MAP.items():
+                    v = result[src_key]
+                    if src_key in _DB_FIELDS:
+                        v = 10.0 * np.log10(v) if v > 0.0 else float("-inf")
+                    arrays[f"{col}_{sensor}"][i] = v
+
+    return pl.DataFrame({**arrays, "var_tdoa": var_tdoa_out})
 
 
 def extract_whale_templates(
@@ -1012,6 +1328,43 @@ def pulse_compress(denoise_config: DenoiseConfig, config: WhaleTemplateConfig) -
         )
 
 
+def _refine_peak_times(
+    cf: NDArray[np.float64],
+    peaks: NDArray[np.intp],
+    time_vector: NDArray,
+    fs: float,
+) -> NDArray:
+    """Refine integer-sample peak locations to sub-sample precision via parabolic interpolation.
+
+    Fits a parabola through each peak and its two immediate neighbors to
+    estimate the true maximum to fractional-sample accuracy, then converts
+    the offset to a timedelta and adds it to the sample time.  Peaks at the
+    array boundary (index 0 or N-1) are returned at their original sample time.
+
+    Args:
+        cf: Characteristic function from which peaks were detected.
+        peaks: Integer sample indices returned by find_peaks.
+        time_vector: Time vector aligned with cf (numpy datetime64 array).
+        fs: Sampling rate in Hz.
+
+    Returns:
+        Array of refined peak times (same dtype as time_vector).
+    """
+    n = len(cf)
+    deltas = np.zeros(len(peaks))
+    interior = (peaks > 0) & (peaks < n - 1)
+
+    if interior.any():
+        p = peaks[interior]
+        a, b, c = cf[p - 1], cf[p], cf[p + 1]
+        denom = a - 2.0 * b + c
+        with np.errstate(invalid="ignore", divide="ignore"):
+            deltas[interior] = np.where(denom != 0.0, 0.5 * (a - c) / denom, 0.0)
+
+    offsets_us = np.round(deltas * 1e6 / fs).astype(np.int64)
+    return time_vector[peaks] + offsets_us.astype("timedelta64[us]")
+
+
 def save_strikes(
     config: StrikeConfig, inventory_path: Path, calibration_dir: Path
 ) -> None:
@@ -1076,7 +1429,7 @@ def xcorr_sensor(sensor: str, sensor_group: h5py.Group, sp_kwargs: dict = {}) ->
 
     logger.info(f"Data shape: {num_detections} detections.")
     logger.info(
-        f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024 ** 3):.2f} GB."
+        f"Size of arrays: {compute_array_size([max_corr, time_diff]) / (1024**3):.2f} GB."
     )
 
     jl = initialize_julia("CrossCorr")

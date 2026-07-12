@@ -1,3 +1,7 @@
+"""Create a two-panel map figure showing the experimental setup for the
+Vineyard Wind project.
+"""
+
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -55,18 +59,18 @@ def plot_experiment_setup(
     ax = axes[0]
     ax = plot_image(image_file, ax=ax)
     ax.text(
-        0.87,
+        0.88,
         0.33,
-        "3DVHA",
+        "3DVHA\n(Site A)",
         transform=ax.transAxes,
         ha="center",
         bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
         zorder=40,
     )
     ax.text(
-        0.67,
+        0.63,
         0.4,
-        "VLA",
+        "VLA\n(Sites B & C)",
         transform=ax.transAxes,
         ha="center",
         bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
@@ -97,7 +101,7 @@ def plot_experiment_setup(
     ax.text(
         0.59,
         0.4,
-        "3DVHA",
+        "Site A",
         transform=ax.transAxes,
         ha="center",
         bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
@@ -106,7 +110,7 @@ def plot_experiment_setup(
     ax.text(
         0.73,
         0.3,
-        "VLA1",
+        "Site B",
         transform=ax.transAxes,
         ha="center",
         bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
@@ -115,7 +119,7 @@ def plot_experiment_setup(
     ax.text(
         0.9,
         0.4,
-        "VLA2",
+        "Site C",
         transform=ax.transAxes,
         ha="center",
         bbox=dict(facecolor="white", edgecolor="none", pad=1.0),

@@ -1,11 +1,11 @@
 # RODEO II - Vineyard Wind Data Analysis Workflow
 
 William Jenkins, Ph.D.  
-Scripps Institution of Oceanography
+Scripps Institution of Oceanography  
 University of California San Diego
 
 This repository contains code used for analyses that have been submitted for peer review to the following publication:
-> Jenkins, W. F. and Lin, Y.T. Passive acoustic tracking of a fin whale during pile driving at an offshore wind construction site. *Scientific Reports* (2026).
+> Jenkins, W. F. and Lin, Y.T. Enhanced detection of fin whale vocalizations during pile driving due to offshore wind farm construction. *Scientific Reports* (2026).
 
 This repository depends on the [`rodeo`](https://github.com/NeptuneProjects/RODEO-II) Python package.
 
@@ -26,7 +26,7 @@ graph TD
 
 
    H --> I[Find peaks and compute TDOA estimates]
-   I --> J[Localize the TDOA estimates]
+   I --> J[Estimate whale call directions of arrival]
 ```
 
 ## Configuration
@@ -53,10 +53,30 @@ The individual steps of the workflow can be run using the following commands:
    `workflow etl`
 2. Run all data processing steps:  
    `workflow process`
-3. Run the localization step:  
+3. Run only the whale call detection step:  
+   `workflow detect`
+4. Run the localization step:  
    `workflow localize`
-4. Run the plotting step:  
+5. Run detection performance evaluation:  
+   `workflow evaluate`
+6. Run the plotting step:  
    `workflow plot`
+
+## Evaluation
+
+### Detection metrics
+
+`workflow evaluate` matches detections to manual annotations, computes per-sensor and pooled precision/recall/F1, and reports event-level detection rates. Results are written to `reports/evaluation/`.
+
+### PR curve sweep
+
+To calibrate detection thresholds, a full threshold sweep can be run against the pulse-compressed HDF5 data:
+
+```bash
+workflow evaluate --prsweep
+```
+
+This sweeps 40 threshold values for both the denoised and raw channels, matches each against piling-condition annotations, and writes per-sensor TP/FP/FN counts to `reports/evaluation/pr_curve_data.csv`. The sweep is computationally expensive (loads full HDF5 files into memory) and only needs to be run once; the resulting CSV is then used by `workflow plot` to generate the PR curve figure.
 
 ## Acknowledgements
 

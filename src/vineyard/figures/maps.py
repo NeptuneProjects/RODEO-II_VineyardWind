@@ -10,9 +10,9 @@ import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
-from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
@@ -476,7 +476,7 @@ def plot_study_area(
         ax.scatter(
             *m(equipment_df["longitude"], equipment_df["latitude"]),
             marker="v",
-            c="tab:green",
+            c="y",
             edgecolors="k",
             # linewidth=1,
             s=marker_size,

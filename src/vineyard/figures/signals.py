@@ -1,3 +1,7 @@
+"""Plot time series and spectrograms for whale vocalizations and
+pile-driving strikes.
+"""
+
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -32,7 +36,7 @@ def plot_sensor_column(
     flim: tuple[float, float] | None,
     ylim: tuple[float, float] | None,
     vmin: float | None = 70,
-    vmax: float | None = 130,
+    vmax: float | None = 120,
 ):
     """Plot time series and spectrogram for a single sensor column.
 
@@ -129,15 +133,15 @@ def plot_signals(
         times=times,
         data=data,
         fs=fs,
-        col_title=f"Fin whale vocalizations and pile driving at VLA1",
+        col_title="Fin whale vocalizations and pile driving at site A",
         is_first_col=True,
         nperseg=nperseg,
         hop=hop,
         nfft=nfft,
         flim=flim,
         ylim=example_signal["ylim"],
-        vmin=70,
-        vmax=130,
+        vmin=60,
+        vmax=120,
     )
     if spec_image is None:
         spec_image = im
