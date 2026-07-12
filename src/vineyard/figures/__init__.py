@@ -2,26 +2,14 @@
 
 This package provides functionality for creating publication-quality figures
 from vineyard wind data, organized by figure type.
-
-Public API:
-    Maps:
-        - create_maps: Create a two-panel map figure
-        - create_and_save_maps: Load data, create, and save map figure
-
-    Common utilities:
-        - PlottingConfig: Configuration for plotting operations
-        - MapConfig: Configuration for map figures
-        - add_panel_label: Add panel labels to axes
-        - save_and_show_figure: Save and optionally display figures
-
-    Orchestration:
-        - make_figures: Create all configured figures from PlottingConfig
 """
 
 import logging
+from pathlib import Path
+from typing import Any, Callable
 
 import matplotlib.pyplot as plt
-import polars as pl
+from matplotlib.figure import Figure
 
 from vineyard.figures.common import (
     DOPConfig,
@@ -45,34 +33,45 @@ from vineyard.figures.tdoa_sensitivity import plot_tdoa_sensitivity
 from vineyard.figures.templates import plot_strike_template
 
 __all__ = [
-    # Common utilities
     "DOPConfig",
     "PlottingConfig",
+    "PRCurveConfig",
     "SNRComparisonConfig",
     "TDOASensitivityConfig",
     "WhaleTrackingConfig",
     "add_panel_label",
-    "save_and_show_figure",
-    # SNR figure
-    "plot_snr_comparison",
-    # PR curve figure
-    "PRCurveConfig",
-    "plot_pr_curve",
-    # Map figures
-    "create_map_panels",
-    # Signal figures
-    "plot_signals",
-    # Template construction figures
-    "plot_strike_template",
-    # DOP figure
-    "plot_dop",
-    # TDOA sensitivity figure
-    "plot_tdoa_sensitivity",
-    # Whale tracking figure
-    "plot_whale_data",
-    # Orchestration
     "make_figures",
+    "plot_correlations",
+    "plot_denoising",
+    "plot_dop",
+    "plot_experiment_setup",
+    "plot_pr_curve",
+    "plot_signals",
+    "plot_snr_comparison",
+    "plot_strike_template",
+    "plot_tdoa_sensitivity",
+    "plot_whale_data",
+    "save_and_show_figure",
 ]
+
+
+def _render(
+    name: str,
+    plot_fn: Callable[..., Figure],
+    output: Path,
+    show: bool,
+    savefig_kwargs: dict[str, Any],
+    **plot_kwargs: Any,
+) -> None:
+    """Call a plot function and save/show its figure, with standardized logging.
+
+    Centralizing this ensures every figure type is saved, shown, and logged
+    identically, regardless of which module produced it.
+    """
+    logging.info(f"Creating {name} figure...")
+    fig = plot_fn(**plot_kwargs)
+    save_and_show_figure(fig, output, show=show, savefig_kwargs=savefig_kwargs)
+    logging.info(f"{name} figure saved to {output}")
 
 
 def make_figures(config: PlottingConfig, show: bool = False) -> None:
@@ -89,53 +88,52 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
         plt.style.use(config.mpl_style)
 
     if config.experiment is not None:
-        logging.info("Creating experiment setup figure...")
-        fig = plot_experiment_setup(
+        _render(
+            "Experiment setup",
+            plot_experiment_setup,
+            config.experiment.output,
+            show,
+            config.savefig_kwargs,
             bathy_data=config.experiment.bathy_data,
             sensor_data=config.experiment.sensor_data,
             turbine_data=config.experiment.turbine_data,
             active_turbine_name=config.experiment.active_turbine_name,
             image_file=config.experiment.image_file,
         )
-        save_and_show_figure(
-            fig,
-            config.experiment.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Experiment setup figure saved to {config.experiment.output}")
 
     if config.signal_template is not None:
-        logging.info("Creating signal template figure...")
-        fig = plot_signals(
-            inventory_dir=config.signal_template.inventory_dir,
-            example_signal=config.signal_template.example_signal,
-            whale_sensors=config.signal_template.whale_sensors,
-            strike_sensors=config.signal_template.strike_sensors,
-            col_titles=config.signal_template.col_titles,
-            filt_type=config.signal_template.filt_type,
-            filt_freq=config.signal_template.filt_freq,
-            nperseg=config.signal_template.nperseg,
-            hop=config.signal_template.hop,
-            nfft=config.signal_template.nfft,
-            flim=config.signal_template.flim,
-            whale_ylim=config.signal_template.whale_ylim,
-            strike_ylim=config.signal_template.strike_ylim,
+        st = config.signal_template
+        _render(
+            "Signal template",
+            plot_signals,
+            st.output,
+            show,
+            config.savefig_kwargs,
+            inventory_dir=st.inventory_dir,
+            example_signal=st.example_signal,
+            whale_sensors=st.whale_sensors,
+            strike_sensors=st.strike_sensors,
+            col_titles=st.col_titles,
+            filt_type=st.filt_type,
+            filt_freq=st.filt_freq,
+            nperseg=st.nperseg,
+            hop=st.hop,
+            nfft=st.nfft,
+            flim=st.flim,
+            whale_ylim=st.whale_ylim,
+            strike_ylim=st.strike_ylim,
             calibration_dir=config.calibration_dir,
-            figsize=config.signal_template.figsize,
+            figsize=st.figsize,
         )
-        save_and_show_figure(
-            fig,
-            config.signal_template.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Signal template figure saved to {config.signal_template.output}")
 
     if config.template_construction is not None:
-        logging.info("Creating template construction figures...")
         tc = config.template_construction
-        fig = plot_strike_template(
+        _render(
+            "Template construction",
+            plot_strike_template,
+            tc.output,
+            show,
+            config.savefig_kwargs,
             strike_index_path=tc.strike_index_path,
             strike_corr_path=tc.strike_corr_path,
             inventory_path=tc.inventory_path,
@@ -154,35 +152,28 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             filt_type=tc.filt_type,
             filt_freq=tc.filt_freq,
         )
-        outfile = tc.output_dir / f"{tc.sensor_name}_template_construction.png"
-        save_and_show_figure(
-            fig,
-            outfile,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Template construction figure saved to {outfile}")
 
     if config.correlation is not None:
-        logging.info("Creating correlation figure...")
         corr = config.correlation
-        fig = plot_correlations(
+        _render(
+            "Correlation",
+            plot_correlations,
+            corr.output,
+            show,
+            config.savefig_kwargs,
             corr_file=corr.corr_file,
             window=corr.window,
             strike_window_size=corr.strike_window_size,
         )
-        save_and_show_figure(
-            fig,
-            corr.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Correlation figure saved to {corr.output}")
 
     if config.denoising is not None:
-        logging.info("Creating denoising figure...")
         dn = config.denoising
-        fig = plot_denoising(
+        _render(
+            "Denoising",
+            plot_denoising,
+            dn.output,
+            show,
+            config.savefig_kwargs,
             data_dir=dn.data_dir,
             sensor=dn.sensor,
             template_data=dn.template_data,
@@ -197,84 +188,65 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
             hop=dn.hop,
             flim=dn.flim,
         )
-        save_and_show_figure(
-            fig,
-            dn.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Denoising figure saved to {dn.output}")
 
     if config.dop is not None:
-        logging.info("Creating DOP figure...")
         dop = config.dop
-        fig = plot_dop(
+        _render(
+            "DOP",
+            plot_dop,
+            dop.output,
+            show,
+            config.savefig_kwargs,
             sensor_data=dop.sensor_data,
             grid_extent_km=dop.grid_extent_km,
             grid_resolution=dop.grid_resolution,
             figsize=dop.figsize,
         )
-        save_and_show_figure(
-            fig,
-            dop.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"DOP figure saved to {dop.output}")
 
     if config.tdoa_sensitivity is not None:
-        logging.info("Creating TDOA sensitivity figure...")
         ts = config.tdoa_sensitivity
-        fig = plot_tdoa_sensitivity(
+        _render(
+            "TDOA sensitivity",
+            plot_tdoa_sensitivity,
+            ts.output,
+            show,
+            config.savefig_kwargs,
             query_bearing_deg=ts.query_bearing_deg,
             figsize=ts.figsize,
         )
-        save_and_show_figure(
-            fig,
-            ts.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"TDOA sensitivity figure saved to {ts.output}")
 
     if config.snr_comparison is not None:
-        logging.info("Creating SNR comparison figure...")
-        fig = plot_snr_comparison(
-            snr_file=config.snr_comparison.snr_file,
-            noise_reduction_dir=config.snr_comparison.noise_reduction_dir,
+        sc = config.snr_comparison
+        _render(
+            "SNR comparison",
+            plot_snr_comparison,
+            sc.output,
+            show,
+            config.savefig_kwargs,
+            snr_file=sc.snr_file,
+            noise_reduction_dir=sc.noise_reduction_dir,
         )
-        save_and_show_figure(
-            fig,
-            config.snr_comparison.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"SNR comparison figure saved to {config.snr_comparison.output}")
 
     if config.pr_curve is not None:
-        logging.info("Creating PR curve figure...")
-        fig = plot_pr_curve(pr_curve_data=config.pr_curve.pr_curve_data)
-        save_and_show_figure(
-            fig,
+        _render(
+            "PR curve",
+            plot_pr_curve,
             config.pr_curve.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
+            show,
+            config.savefig_kwargs,
+            pr_curve_data=config.pr_curve.pr_curve_data,
         )
-        logging.info(f"PR curve figure saved to {config.pr_curve.output}")
 
     if config.whale_tracking is not None:
-        logging.info("Creating whale tracking figure...")
-        whale_df = pl.read_csv(config.whale_tracking.whale_data, try_parse_dates=True)
-        fig = plot_whale_data(
-            whale_df=whale_df,
-            time_ranges=config.whale_tracking.time_ranges or [],
-            brg_ylim=config.whale_tracking.brg_ylim,
-            brg_ref=config.whale_tracking.brg_ref,
+        wt = config.whale_tracking
+        _render(
+            "Whale tracking",
+            plot_whale_data,
+            wt.output,
+            show,
+            config.savefig_kwargs,
+            whale_data=wt.whale_data,
+            time_ranges=wt.time_ranges or [],
+            brg_ylim=wt.brg_ylim,
+            brg_ref=wt.brg_ref,
         )
-        save_and_show_figure(
-            fig,
-            config.whale_tracking.output,
-            show=show,
-            savefig_kwargs=config.savefig_kwargs,
-        )
-        logging.info(f"Whale tracking figure saved to {config.whale_tracking.output}")
