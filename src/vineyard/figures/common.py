@@ -175,6 +175,7 @@ class SNRComparisonConfig(BaseModel):
     """Configuration for the SNR piling vs. quiet comparison figure."""
 
     snr_file: Path = Path("reports/evaluation/snr_comparison.csv")
+    noise_reduction_dir: Path = Path("data/acoustic/denoised")
     output: Path = Path("reports/figures/snr_comparison.png")
 
 
@@ -240,7 +241,7 @@ def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str
         mathtext: If True, use math font. If False, use regular figure font (via \\mathregular).
 
     Returns:
-        Formatted string: "0" for zero, "C × 10^n" for others with superscripts.
+        Formatted string: "0" for zero, "C x 10^n" for others with superscripts.
     """
     if value == 0:
         return "0"
@@ -249,27 +250,16 @@ def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str
     exponent = int(np.floor(np.log10(abs(value))))
     mantissa = value / (10**exponent)
 
-    # If mantissa is very close to 1, just show 10 ** exponent
-    if np.isclose(mantissa, 1.0, atol=0.01):
+    # If mantissa is very close to +-1, just show +-10 ** exponent
+    if np.isclose(abs(mantissa), 1.0, atol=0.01):
+        sign = "-" if mantissa < 0 else ""
         if exponent == 0:
-            return "1"
-        if mathtext:
-            return f"$10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{10^{{{exponent}}}}}$"
-    elif np.isclose(mantissa, -1.0, atol=0.01):
-        if exponent == 0:
-            return "-1"
-        if mathtext:
-            return f"$-10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{-10^{{{exponent}}}}}$"
+            return f"{sign}1"
+        body = f"{sign}10^{{{exponent}}}"
     else:
-        # Include the mantissa
-        if mathtext:
-            return f"${mantissa:.1f} \\times 10^{{{exponent}}}$"
-        else:
-            return f"$\\mathregular{{{mantissa:.1f} \\times 10^{{{exponent}}}}}$"
+        body = f"{mantissa:.1f} \\times 10^{{{exponent}}}"
+
+    return f"${body}$" if mathtext else f"$\\mathregular{{{body}}}$"
 
 
 def save_and_show_figure(
