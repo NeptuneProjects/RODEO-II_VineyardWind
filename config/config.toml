@@ -187,100 +187,99 @@ source_north = true                                               # confirmed by
 ambiguity_lower_bound = 90.0                                      # degrees (E-W array axis boundary)
 ambiguity_upper_bound = 270.0                                     # degrees (E-W array axis boundary)
 
-# Bearing uncertainty — per-detection SNR-based σ_TDOA estimation
-# Matches filter settings from [process.whale_detection]; type2 call parameters
-# from scripts/estimate_template_bandwidth.py
+# Bearing uncertainty — per-detection SNR-based TDOA std estimation
 pc_data_path = "data/acoustic/denoised"
 channel = 5
-template_duration_s = 1.2               # seconds (type2 mean across sensors)
-f_low_hz = 19.0                         # Hz (type2 chirp lower bound)
-f_high_hz = 24.0                        # Hz (type2 chirp upper bound)
+template_duration_s = 1.2
+f_low_hz = 19.0
+f_high_hz = 24.0
 filt_type = "bandpass"
-filt_freq = [15.0, 50.0]                # Hz
+filt_freq = [15.0, 50.0]
 
 [plotting]
 savefig_kwargs = { bbox_inches = "tight", dpi = 300, facecolor = "white" }
 mpl_style = "config/scirep_fig_style.mplstyle"
 
-# [plotting.experiment]
-# image_file = "reports/figures/windfarm.png"
-# # output = "reports/figures/experiment_setup.png"
-# output = "reports/scirep/figure01.png"
+[plotting.experiment]
+image_file = "reports/figures/windfarm.png"
+# output = "reports/figures/experiment_setup.png"
+output = "reports/scirep/figure01.png"
 
-# [plotting.signal_template]
-# col_titles = ["site A", "site B", "site C"]
-# whale_sensors = [
-#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
-#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-# ]
-# strike_sensors = [
-#     { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
-#     { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
-#     { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
-# ]
-# filt_type = "bandpass"
-# filt_freq = [9.0, 110.0]
-# nperseg = 16384
-# hop = 32
-# flim = [10.0, 90.0]
-# whale_ylim = [-2e7, 2e7]
-# strike_ylim = [-1e8, 1e8]
-# figsize = [9, 9]
-# # output = "reports/figures/signal_templates2.png"
-# output = "reports/scirep/figure02.png"
+[plotting.signal_template]
+col_titles = ["site A", "site B", "site C"]
+whale_sensors = [
+    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:25:46.60", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:25:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:25:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+]
+strike_sensors = [
+    { name = "3dvha", channel = 7, peak_time = "2023-12-01T22:23:45.60", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla1", channel = 3, peak_time = "2023-12-01T22:23:56.20", start_buffer = 1.5, end_buffer = 1.5 },
+    { name = "vla2", channel = 0, peak_time = "2023-12-01T22:23:55.75", start_buffer = 1.5, end_buffer = 1.5 },
+]
+filt_type = "bandpass"
+filt_freq = [9.0, 110.0]
+nperseg = 16384
+hop = 32
+flim = [10.0, 90.0]
+whale_ylim = [-2e7, 2e7]
+strike_ylim = [-1e8, 1e8]
+figsize = [9, 9]
+# output = "reports/figures/signal_templates2.png"
+output = "reports/scirep/figure02.png"
 
-# [plotting.signal_template.example_signal]
-# name = "vla1"
-# channel = 0
-# time_start = "2023-12-01T21:06:15.00"
-# time_end = "2023-12-01T21:08:15"
-# start_buffer = 60.0
-# end_buffer = 60.0
-# datadir = "data/acoustic/denoised"
-# ylim = [-2e7, 2e7]
+[plotting.signal_template.example_signal]
+name = "vla1"
+channel = 0
+time_start = "2023-12-01T21:06:15.00"
+time_end = "2023-12-01T21:08:15"
+start_buffer = 60.0
+end_buffer = 60.0
+datadir = "data/acoustic/denoised"
+ylim = [-2e7, 2e7]
 
-# [plotting.correlation]
-# corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
-# window = 120.0
-# # output = "reports/figures/strike_correlation.png"
-# output = "reports/scirep/figure03.png"
+[plotting.correlation]
+corr_file = "data/acoustic/strikes/strike_corr_bandpass_15.0-50.0.h5"
+window = 120.0
+# output = "reports/figures/strike_correlation.png"
+output = "reports/scirep/figure03.png"
 
-# [plotting.template_construction]
-# sensor_name = "vla1"
-# strike_indices = [30, 1900, 2908]
-# output_dir = "reports/figures/strike_templates/"
+[plotting.template_construction]
+sensor_name = "vla1"
+strike_indices = [30, 1900, 2908]
+output_dir = "reports/figures/strike_templates/"
 
-# [plotting.pr_curve]
-# pr_curve_data = "reports/evaluation/pr_curve_data.csv"
-# # output = "reports/figures/pr_curve.png"
-# output = "reports/scirep/figure05.png"
+[plotting.pr_curve]
+pr_curve_data = "reports/evaluation/pr_curve_data.csv"
+# output = "reports/figures/pr_curve.png"
+output = "reports/scirep/figure05.png"
 
-# [plotting.tdoa_sensitivity]
-# query_bearing_deg = 330.0                  # N30°W — north mirror of S30°W; confirmed source location
-# output = "reports/scirep/figure06.png"
+[plotting.tdoa_sensitivity]
+query_bearing_deg = 330.0
+output = "reports/scirep/figure06.png"
 
-# [plotting.denoising]
-# sensor = "vla1"
-# time_start = "2023-12-01T22:11:00.00"
-# time_end = "2023-12-01T22:26:00.00"
-# freq_time_start = "2023-12-01T22:24:00"
-# freq_time_end = "2023-12-01T22:25:59"
-# filt_type = "bandpass"
-# filt_freq = [15.0, 50.0]
-# window = "hann"
-# nperseg = 32768
-# hop = 256
-# flim = [15.0, 50.0]
-# # output = "reports/figures/denoised.png"
-# output = "reports/scirep/figure07.png"
+[plotting.denoising]
+sensor = "vla1"
+time_start = "2023-12-01T22:11:00.00"
+time_end = "2023-12-01T22:26:00.00"
+freq_time_start = "2023-12-01T22:24:00"
+freq_time_end = "2023-12-01T22:25:59"
+filt_type = "bandpass"
+filt_freq = [15.0, 50.0]
+window = "hann"
+nperseg = 32768
+hop = 256
+flim = [15.0, 50.0]
+# output = "reports/figures/denoised.png"
+output = "reports/scirep/figure07.png"
 
-# [plotting.snr_comparison]
-# snr_file = "reports/evaluation/snr_comparison.csv"
-# # output = "reports/figures/snr_comparison.png"
-# output = "reports/scirep/figure08.png"
+[plotting.snr_comparison]
+snr_file = "reports/evaluation/snr_comparison.csv"
+noise_reduction_dir = "data/acoustic/denoised"
+# output = "reports/figures/snr_comparison.png"
+output = "reports/scirep/figure08.png"
 
-# [plotting.whale_tracking]
-# whale_data = "data/acoustic/tdoa/localization.csv"
+[plotting.whale_tracking]
+whale_data = "data/acoustic/tdoa/localization.csv"
 # output = "reports/figures/whale_tracking.png"
-# output = "reports/scirep/figure09.png"
+output = "reports/scirep/figure09.png"
