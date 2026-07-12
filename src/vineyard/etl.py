@@ -248,12 +248,12 @@ def inventory_acoustic_data(config_file: Path) -> None:
 
 
 def run_etl(config: ETLConfig) -> None:
-    # bathy_etl(config.bathymetry)
-    # compute_distances(config.sensor_data, config.distances)
+    bathy_etl(config.bathymetry)
+    compute_distances(config.sensor_data, config.distances)
     inventory_acoustic_data(config.inventory_config)
-    # modify_sensor_table(
-    #     config.sensor_data, config.turbine_data, config.source_pile, config.ref_mooring
-    # )
+    modify_sensor_table(
+        config.sensor_data, config.turbine_data, config.source_pile, config.ref_mooring
+    )
 
 
 def save_bathy_data(
