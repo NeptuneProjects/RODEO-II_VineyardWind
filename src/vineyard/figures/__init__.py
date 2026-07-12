@@ -239,7 +239,10 @@ def make_figures(config: PlottingConfig, show: bool = False) -> None:
 
     if config.snr_comparison is not None:
         logging.info("Creating SNR comparison figure...")
-        fig = plot_snr_comparison(snr_file=config.snr_comparison.snr_file)
+        fig = plot_snr_comparison(
+            snr_file=config.snr_comparison.snr_file,
+            noise_reduction_dir=config.snr_comparison.noise_reduction_dir,
+        )
         save_and_show_figure(
             fig,
             config.snr_comparison.output,
