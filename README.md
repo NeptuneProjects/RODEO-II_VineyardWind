@@ -1,5 +1,7 @@
 # RODEO II - Vineyard Wind Data Analysis Workflow
 
+[![DOI](https://zenodo.org/badge/982957688.svg)](https://doi.org/10.5281/zenodo.21698439)
+
 William Jenkins, Ph.D.  
 Scripps Institution of Oceanography  
 University of California San Diego
