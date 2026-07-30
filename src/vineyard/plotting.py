@@ -1,37 +1,19 @@
-from collections.abc import Sequence
-from pathlib import Path
 import string
+from pathlib import Path
 
 import cmocean as cmo
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.signal as signal
-from matplotlib import font_manager
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
+from scipy import signal
 from scipy.interpolate import interp1d
 from tritonoa.data.stream import DataStream
 from tritonoa.data.time import TIME_CONVERSION_FACTOR
 
 FIG_STYLE = Path("config/scirep_fig_style.mplstyle")
-# FONT_PATH = Path("/System/Library/Fonts/HelveticaNeue.ttc")
 plt.style.use(FIG_STYLE)
-
-# print(matplotlib.rcParams)
-
-# font_dirs = [Path("/System/Library/Fonts")]
-# font_files = font_manager.findSystemFonts(fontpaths=font_dirs)
-# font_list = font_manager.createFontList(font_files)
-# font_manager.fontManager.ttflist.extend(font_list)
-
-# matplotlib.rcParams["font.family"] = "Helvetica Neue"
-
-# font_manager.fontManager.addfont(FONT_PATH)
-# prop = font_manager.FontProperties(fname=FONT_PATH)
-# plt.rcParams["font.family"] = "sans-serif"
-# plt.rcParams["font.sans-serif"] = prop.get_name()
-
 
 SAVEFIG_KWARGS = {
     "bbox_inches": "tight",
@@ -141,11 +123,11 @@ def plot_corr(
     for j, (sensor, corr, time_diff) in enumerate(zip(sensors, corrs, time_diffs)):
         (
             resampled_data,
-            mean_corr,
-            lower_bounds,
-            upper_bounds,
+            _,
+            _,
+            _,
             epdf,
-            epdf_bins,
+            _,
             Tgrid,
             Mgrid,
         ) = _format_data(corr, time_diff, window)
@@ -155,7 +137,7 @@ def plot_corr(
         epdf[epdf < epdf_vmin] = np.nan
 
         tvec = Tgrid[:, 0]
-        M = resampled_data.shape[0]
+        # M = resampled_data.shape[0]
 
         for i in range(2):
             ax = axes[i, j]
@@ -215,7 +197,7 @@ def plot_corr(
             fontsize=plt.rcParams["font.size"],
             va="bottom",
             ha="right",
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.95, pad=1.0),
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.95, "pad": 1.0},
         )
 
     return fig
@@ -235,7 +217,7 @@ def plot_3dvha_data(
     xlabel_f: str = "Time (s)",
     ylabel_t: str = "Amplitude",
     ylabel_f: str = "Frequency (Hz)",
-    title: str = None,
+    title: str | None = None,
 ) -> Figure:
     subplot_hspace = 0.25
     title_kwargs = {"ha": "left", "x": 0.0, "y": 0.95}
@@ -322,7 +304,7 @@ def plot_3dvha_spectrograms(
     figsize: tuple[float] = (8, 10),
     xlabel: str = "Time (s)",
     ylabel: str = "Frequency (Hz)",
-    title: str = None,
+    title: str | None = None,
 ) -> Figure:
     title_kwargs = {"ha": "left", "x": 0, "y": 0.95}
     fs = ds.stats.sampling_rate
@@ -387,7 +369,7 @@ def plot_all_acoustic_data(
     fmin: float | None = None,
     fmax: float | None = None,
     figsize: tuple[float] = (16, 9),
-    title: str = None,
+    title: str | None = None,
 ) -> None:
     def extract_data(data: list[DataStream]):
         ch_names = []
@@ -431,7 +413,7 @@ def plot_all_acoustic_data(
         ch_names,
         data_vectors,
         time_vectors,
-        sampling_rates,
+        _,
         Sxx_matrices,
         Sxx_freqs,
         Sxx_times,
@@ -490,7 +472,7 @@ def plot_all_acoustic_data(
 
         cax = fig.add_axes([0.96, 0.15, 0.02, 0.7])
         cbar = fig.colorbar(im, cax=cax)
-        cbar.set_label(f"PSD (Normalized dB)")
+        cbar.set_label("PSD (Normalized dB)")
 
     if title:
         fig.suptitle(title, fontsize=12, y=0.92)
@@ -543,7 +525,7 @@ def plot_shru_data(
     xlabel_f: str = "Time (s)",
     ylabel_t: str = "Amplitude",
     ylabel_f: str = "Frequency (Hz)",
-    title: str = None,
+    title: str | None = None,
 ) -> Figure:
     subplot_hspace = 0.1
 
@@ -624,7 +606,7 @@ def plot_shru_spectrograms(
     figsize: tuple[float] = (8, 6),
     xlabel: str = "Time (s)",
     ylabel: str = "Frequency (Hz)",
-    title: str = None,
+    title: str | None = None,
 ) -> Figure:
     fs = ds.stats.sampling_rate
     channels = np.arange(ds.num_channels)
