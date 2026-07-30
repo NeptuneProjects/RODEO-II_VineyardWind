@@ -104,7 +104,7 @@ def plot_signals(
     # Collect spectrogram axes for colorbar
     spec_image = None
 
-    # Create main grid: 2 rows, 3 columns
+    # Create main grid: 3 rows, 3 columns
     # Top row for whale signals, bottom row for other signals
     main_gs = GridSpec(
         3, 3, figure=fig, height_ratios=[1, 1, 1], hspace=0.3, wspace=0.15
@@ -133,7 +133,7 @@ def plot_signals(
         times=times,
         data=data,
         fs=fs,
-        col_title="Fin whale vocalizations and pile driving at site A",
+        col_title="Fin whale vocalizations and pile driving at site B",
         is_first_col=True,
         nperseg=nperseg,
         hop=hop,
