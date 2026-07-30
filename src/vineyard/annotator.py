@@ -29,6 +29,7 @@ from tritonoa.data.reader import read_inventory
 from tritonoa.data.stream import DataStream
 
 dotenv.load_dotenv()
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).parent.parent.parent  # vineyard_wind/
 INVENTORY_PATH = ROOT / "data" / "acoustic"
@@ -105,7 +106,7 @@ def load_segment(
     try:
         ds = read_inventory(inventory, seg_start, seg_end, channels=channels)
     except Exception as exc:
-        logging.error("read_inventory failed for %s: %s", sensor, exc)
+        logger.error("read_inventory failed for %s: %s", sensor, exc)
         return None
 
     dec = int(np.round(ds.stats.sampling_rate / target_fs))
@@ -227,7 +228,7 @@ def build_figure(
                 x=t_s,
                 y=amp / peak,
                 mode="lines",
-                line=dict(color="#5b8dd9", width=0.7),
+                line={"color": "#5b8dd9", "width": 0.7},
                 name=label,
                 showlegend=False,
                 hoverinfo="skip",
@@ -258,12 +259,12 @@ def build_figure(
                 zmin=vmin,
                 zmax=vmax,
                 showscale=(i == n - 1),
-                colorbar=dict(
-                    title=dict(text="dB (norm.)", side="right"),
-                    thickness=14,
-                    len=0.4,
-                    y=0.2,
-                ),
+                colorbar={
+                    "title": {"text": "dB (norm.)", "side": "right"},
+                    "thickness": 14,
+                    "len": 0.4,
+                    "y": 0.2,
+                },
                 hovertemplate="t=%{x:.2f} s<br>f=%{y:.1f} Hz<br>%{z:.1f} dB<extra></extra>",
             ),
             row=sp_row,
@@ -291,12 +292,12 @@ def build_figure(
                 x=ann_t,
                 y=ann_f,
                 mode="markers",
-                marker=dict(
-                    symbol="x",
-                    size=14,
-                    color="lime",
-                    line=dict(width=2.5, color="lime"),
-                ),
+                marker={
+                    "symbol": "x",
+                    "size": 14,
+                    "color": "lime",
+                    "line": {"width": 2.5, "color": "lime"},
+                },
                 name="Annotations" if i == 0 else None,
                 showlegend=(i == 0),
                 hovertemplate="t=%{x:.2f} s<br>f=%{y:.1f} Hz<extra>Annotation</extra>",
@@ -308,7 +309,7 @@ def build_figure(
         # Axis styling
         fig.update_yaxes(
             title_text=label,
-            title_font=dict(size=9),
+            title_font={"size": 9},
             range=[-1.1, 1.1],
             showticklabels=False,
             row=ts_row,
@@ -316,7 +317,7 @@ def build_figure(
         )
         fig.update_yaxes(
             title_text="Freq (Hz)",
-            title_font=dict(size=9),
+            title_font={"size": 9},
             row=sp_row,
             col=1,
         )
@@ -331,18 +332,18 @@ def build_figure(
 
     seg_str = str(seg_start).replace("T", " ").split(".")[0]
     fig.update_layout(
-        title=dict(text=f"{seg_str} UTC  (+{SEGMENT_S} s)", font=dict(size=13)),
+        title={"text": f"{seg_str} UTC  (+{SEGMENT_S} s)", "font": {"size": 13}},
         height=max(160 * 2 * n, 300),
         template="plotly_dark",
-        margin=dict(l=15, r=80, t=55, b=40),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.01,
-            xanchor="right",
-            x=1,
-            font=dict(size=10),
-        ),
+        margin={"l": 15, "r": 80, "t": 55, "b": 40},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.01,
+            "xanchor": "right",
+            "x": 1,
+            "font": {"size": 10},
+        },
     )
     return fig
 
@@ -648,7 +649,7 @@ def _register_callbacks(app: dash.Dash) -> None:
         else:
             try:
                 t = np.datetime64(start_input.strip(), "us")
-            except Exception:
+            except (ValueError, AttributeError):
                 t = np.datetime64(DEFAULT_START, "us")
 
         t_str = str(t)
@@ -669,7 +670,7 @@ def _register_callbacks(app: dash.Dash) -> None:
         seg_start_str, selected, target_fs, fmin, fmax, vmin, vmax, annotations
     ):
         if not seg_start_str or not selected:
-            return go.Figure(layout=dict(template="plotly_dark"))
+            return go.Figure(layout={"template": "plotly_dark"})
 
         selections = parse_selections(selected)
         seg_start = np.datetime64(seg_start_str, "us")
