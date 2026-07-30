@@ -5,8 +5,9 @@ from vineyard wind data, organized by figure type.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -34,8 +35,8 @@ from vineyard.figures.templates import plot_strike_template
 
 __all__ = [
     "DOPConfig",
-    "PlottingConfig",
     "PRCurveConfig",
+    "PlottingConfig",
     "SNRComparisonConfig",
     "TDOASensitivityConfig",
     "WhaleTrackingConfig",
@@ -54,6 +55,8 @@ __all__ = [
     "save_and_show_figure",
 ]
 
+logger = logging.getLogger(__name__)
+
 
 def _render(
     name: str,
@@ -68,10 +71,10 @@ def _render(
     Centralizing this ensures every figure type is saved, shown, and logged
     identically, regardless of which module produced it.
     """
-    logging.info(f"Creating {name} figure...")
+    logger.info(f"Creating {name} figure...")
     fig = plot_fn(**plot_kwargs)
     save_and_show_figure(fig, output, show=show, savefig_kwargs=savefig_kwargs)
-    logging.info(f"{name} figure saved to {output}")
+    logger.info(f"{name} figure saved to {output}")
 
 
 def make_figures(config: PlottingConfig, show: bool = False) -> None:

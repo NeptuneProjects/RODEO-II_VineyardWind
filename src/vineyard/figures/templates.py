@@ -12,7 +12,7 @@ from matplotlib.ticker import FuncFormatter
 from numpy.typing import NDArray
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-import vineyard.readers as readers
+from vineyard import readers
 from vineyard.figures.common import add_panel_label, format_tick_scientific
 from vineyard.process_utils import (
     enforce_same_size,
@@ -20,6 +20,8 @@ from vineyard.process_utils import (
     get_anchor_trace,
     sample_delay,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def plot_strike_template(
@@ -66,7 +68,7 @@ def plot_strike_template(
         Matplotlib Figure.
     """
     # Read the acoustic data
-    logging.info(f"Reading acoustic data for {sensor_name}...")
+    logger.info(f"Reading acoustic data for {sensor_name}...")
     ds, strike_index = readers.read_strike_data(
         inventory_path,
         strike_index_path,
@@ -89,7 +91,7 @@ def plot_strike_template(
     ds.stats.units = "uPa"
 
     # Read correlation matrix
-    logging.info(f"Reading correlation matrix for {sensor_name}...")
+    logger.info(f"Reading correlation matrix for {sensor_name}...")
     corr_matrix, _, _ = readers.read_xcorr_data(strike_corr_path, sensor_name)
 
     # Get strike information
@@ -133,7 +135,7 @@ def plot_strike_template(
             window_start = strike_idx - half_window
             window_end = strike_idx + half_window
 
-        logging.info(
+        logger.info(
             f"Processing strike {strike_idx} with window [{window_start}, {window_end})"
         )
 
@@ -217,7 +219,7 @@ def plot_template(
     traces: NDArray,
     template: NDArray | None = None,
     reference_ind: int | None = None,
-    title: str = None,
+    title: str | None = None,
     ylim: Sequence[float] | None = None,
     figsize: tuple[float] = (4, 6),
     offset_spacing_factor: float = 2.5,

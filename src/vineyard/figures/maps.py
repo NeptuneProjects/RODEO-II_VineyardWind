@@ -6,10 +6,10 @@ from pathlib import Path
 
 import cmasher as cmr
 import cmocean as cmo
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+from matplotlib import colors
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
@@ -21,8 +21,10 @@ from mpl_toolkits.basemap import Basemap
 from numpy.typing import NDArray
 from polars import DataFrame
 
-import vineyard.readers as readers
+from vineyard import readers
 from vineyard.figures.common import add_panel_label
+
+logger = logging.getLogger(__name__)
 
 # Bounding box constants for map figures
 BBOX_INSET = [[-70.65, -70.249], [40.9, 41.201]]
@@ -67,9 +69,12 @@ def _add_bounding_box(
 def _create_context_inset(
     ax,
     bbox_outer: list[list[float, float]],
-    bounds: list[list[float, float]] = [[-77.5, -62.5], [32.5, 47.5]],
+    bounds: list[list[float, float]] | None = None,
 ) -> None:
     """Create a New England context inset map showing the study area location."""
+    if not bounds:
+        bounds = [[-77.5, -62.5], [32.5, 47.5]]
+
     ax_inset = inset_axes(
         ax, width="25%", height="25%", loc="upper right", borderpad=0.5
     )
@@ -260,7 +265,7 @@ def load_map_data(
         Tuple of (bathy_data, equip_locations, turbine_locations, whale_df)
         where bathy_data is (bathy, lonvec, latvec)
     """
-    logging.info("Loading data files.")
+    logger.info("Loading data files.")
     bathy, lonvec, latvec = readers.read_bathymetry(bathy_data)
     equip_locations = pl.read_csv(sensor_data)
     turbine_locations = pl.read_csv(turbine_data)
@@ -290,8 +295,10 @@ def _plot_bathy(
     m: Basemap,
     ax: Axes | None = None,
     shallowest_contour_depth: float = 0.0,
-    levelsc=np.arange(-100, 1, 5),
+    levelsc: np.ndarray | None = None,
 ) -> tuple[plt.contourf, Axes]:
+    if not levelsc:
+        levelsc = np.arange(-100, 1, 5)
 
     data[data > 0] = 0.1
 
@@ -387,11 +394,11 @@ def plot_study_area(
     ax: Axes | None = None,
     scale_bar: int | None = None,
     shallowest_contour_depth: float = 0.0,
-    levelsc=np.arange(-100, 1, 5),
+    levelsc: np.ndarray | None = None,
     meridians: float = 0.2,
     parallels: float = 0.2,
-    meridian_labels: list[int] = [0, 0, 1, 0],
-    parallel_labels: list[int] = [1, 0, 0, 0],
+    meridian_labels: list[int] | None = None,
+    parallel_labels: list[int] | None = None,
     marker_size: int = 50,
     show_legend: bool = True,
     legend_bbox: tuple[float, float] = (0.765, 0.15),
@@ -403,6 +410,13 @@ def plot_study_area(
     projected_ticks: bool = False,
     tick_spacing_km: float | None = None,
 ) -> tuple[Axes, Basemap]:
+    if not levelsc:
+        levelsc = np.arange(-100, 1, 5)
+    if not meridian_labels:
+        meridian_labels = [0, 0, 1, 0]
+    if not parallel_labels:
+        parallel_labels = [1, 0, 0, 0]
+
     if bounds is None:
         llcrnrlat = np.min(latvec)
         urcrnrlat = np.max(latvec)

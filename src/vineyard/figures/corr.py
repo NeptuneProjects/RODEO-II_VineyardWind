@@ -164,7 +164,7 @@ def _plot_corr(
             fontsize=plt.rcParams["font.size"],
             va="bottom",
             ha="right",
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.95, pad=1.0),
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.95, "pad": 1.0},
         )
 
     if strike_window_size is not None:
@@ -181,7 +181,7 @@ def _plot_corr(
             ha="left",
             transform=axes[1, 0].get_xaxis_transform(),
             fontsize=plt.rcParams["font.size"] * 0.9,
-            bbox=dict(facecolor="white", edgecolor="none", alpha=0.95, pad=1.0),
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.95, "pad": 1.0},
         )
 
     return fig

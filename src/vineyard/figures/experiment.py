@@ -64,7 +64,7 @@ def plot_experiment_setup(
         "3DVHA\n(Site A)",
         transform=ax.transAxes,
         ha="center",
-        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=40,
     )
     ax.text(
@@ -73,7 +73,7 @@ def plot_experiment_setup(
         "VLA\n(Sites B & C)",
         transform=ax.transAxes,
         ha="center",
-        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=40,
     )
 
@@ -104,7 +104,7 @@ def plot_experiment_setup(
         "Site A",
         transform=ax.transAxes,
         ha="center",
-        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=40,
     )
     ax.text(
@@ -113,7 +113,7 @@ def plot_experiment_setup(
         "Site B",
         transform=ax.transAxes,
         ha="center",
-        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=40,
     )
     ax.text(
@@ -122,7 +122,7 @@ def plot_experiment_setup(
         "Site C",
         transform=ax.transAxes,
         ha="center",
-        bbox=dict(facecolor="white", edgecolor="none", pad=1.0),
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=40,
     )
 

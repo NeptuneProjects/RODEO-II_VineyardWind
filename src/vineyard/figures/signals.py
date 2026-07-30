@@ -6,14 +6,14 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.signal as signal
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from scipy import signal
 from tritonoa.data.reader import read_hdf5
 from tritonoa.data.time import TIME_CONVERSION_FACTOR, TIME_PRECISION
 
-import vineyard.readers as readers
+from vineyard import readers
 from vineyard.figures.common import add_panel_label
 
 

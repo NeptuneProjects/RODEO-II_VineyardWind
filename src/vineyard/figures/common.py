@@ -11,6 +11,8 @@ from matplotlib.offsetbox import AnchoredText
 from pydantic import BaseModel, model_validator
 from tritonoa.data.time import TIME_PRECISION
 
+logger = logging.getLogger(__name__)
+
 
 class CorrelationConfig(BaseModel):
     """Configuration for correlation figure creation."""
@@ -224,7 +226,7 @@ def add_panel_label(ax, label: str) -> None:
     anchored_text = AnchoredText(
         label,
         loc="upper left",
-        prop=dict(fontsize=8, fontweight="bold"),
+        prop={"size": 8, "weight": "bold"},
         frameon=True,
         pad=0.0,
         borderpad=0.5,
@@ -267,19 +269,19 @@ def format_tick_scientific(value: float, pos=None, mathtext: bool = True) -> str
 
 
 def save_and_show_figure(
-    fig: Figure, output: Path, show: bool = False, savefig_kwargs: dict = {}
+    fig: Figure, output: Path, show: bool = False, savefig_kwargs: dict | None = None
 ) -> None:
     """Save figure to file and optionally display it.
 
     Args:
         fig: Matplotlib figure to save
         output: Output file path
-        dpi: Resolution in dots per inch
         show: Whether to display the figure interactively
+        savefig_kwargs: Additional keyword arguments to pass to `fig.savefig()`.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, **savefig_kwargs)
-    logging.info(f"Figure saved to {output.resolve()}")
+    fig.savefig(output, **(savefig_kwargs or {}))
+    logger.info(f"Figure saved to {output.resolve()}")
 
     if show:
         plt.show()

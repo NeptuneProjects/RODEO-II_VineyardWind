@@ -49,8 +49,12 @@ def plot_denoising(
     window: str = "hann",
     nperseg: int = 16384,
     hop: int = 8192,
-    flim: list[float] = [15, 50],
+    flim: list[float] | None = None,
 ) -> plt.Figure:
+
+    if not flim:
+        flim = [15, 50]
+
     ds, whale_ds = load_plotting_data(
         data_dir,
         sensor,
@@ -90,9 +94,12 @@ def plot_denoising_freq(
     window: str = "hann",
     nperseg: int = 16384,
     hop: int = 8192,
-    flim: list[float] = [15, 50],
+    flim: list[float] | None = None,
     subfig: plt.Figure | None = None,
 ) -> plt.Figure:
+    if not flim:
+        flim = [15, 50]
+
     fs = ds.stats.sampling_rate
     STFT = ShortTimeFFT(
         fs=fs, hop=hop, mfft=nperseg, win=get_window(window, nperseg), scale_to="psd"
